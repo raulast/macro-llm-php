@@ -17,7 +17,7 @@ On top of the provider layer, MacroLLM provides a full agentic stack: **Skills**
 
 ## Features
 
-- 7 built-in providers: OpenAI, Anthropic, Gemini, Groq, OpenRouter, Ollama, llama.cpp
+- 9 built-in providers: OpenAI, Anthropic, Gemini, Groq, OpenRouter, Ollama, llama.cpp, OpenCode Zen Go, OpenCode Zen Go (Anthropic)
 - Unified `InternalRequest` / `InternalResponse` format with bidirectional normalization
 - Automatic tool-call loop via `Agent`
 - Reusable Skills (system prompt + tools + config — composable, subclassable, DB-hydratable via `fromArray`)
@@ -41,6 +41,8 @@ On top of the provider layer, MacroLLM provides a full agentic stack: **Skills**
 | openrouter | OpenAI-compatible | Bearer API key | `openrouter.ai/api/v1` | Model names prefixed: `openai/gpt-4o` |
 | ollama | OpenAI-compatible | Optional | `localhost:11434/v1` | Local inference |
 | llamacpp | OpenAI-compatible | None | `localhost:8080/v1` | Local inference |
+| opencode-zen-go | OpenAI-compatible | Bearer API key | `opencode.ai` | GLM, Kimi, DeepSeek, MiMo; API key from [opencode.ai](https://opencode.ai) Zen console |
+| opencode-zen-go-anthropic | Anthropic-compatible | x-api-key header | `opencode.ai` | MiniMax, Qwen; same API key as opencode-zen-go |
 
 ## Requirements
 
@@ -85,6 +87,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 GEMINI_API_KEY=AIza...
 GROQ_API_KEY=gsk_...
 OPENROUTER_API_KEY=sk-or-...
+OPENCODE_ZEN_API_KEY=ocz-...
 ```
 
 ## Usage
@@ -146,6 +149,32 @@ foreach ($llm->stream(new InternalRequest([InternalMessage::user('Tell me a stor
     echo $chunk->delta;
     flush();
 }
+```
+
+### Listing Available Models
+
+```php
+// Fetches live model list from the provider's own API (may make HTTP request)
+$models = $llm->models('openai');
+// → ['gpt-4o', 'gpt-4o-mini', 'o1', 'o3', ...]
+
+$models = $llm->models('anthropic');
+// → ['claude-opus-4-5', 'claude-sonnet-4-5', ...]
+
+// OpenCode Zen fetches from GET /zen/go/v1/models
+$models = $llm->models('opencode-zen-go');
+// → ['deepseek-v3-0324', 'glm-z1-flash', 'kimi-k2', ...]
+
+// Ollama and llama.cpp reflect locally installed / loaded models
+$models = $llm->models('ollama');
+// → ['llama3.2:latest', 'codellama:7b', ...]
+
+// Via the Facade (Laravel)
+$models = \MacroLLM\Integration\Laravel\MacroLLMFacade::models('gemini');
+
+// Via provider directly (no HTTP needed for provider object access)
+$provider = $llm->providers()->get('groq');
+$models = $provider->getModels();
 ```
 
 ### Tool Calling
@@ -303,6 +332,7 @@ src/
 ├── Registry/       # Tool, Skill, and Provider registries
 ├── Skill/          # Base Skill class (composable, subclassable)
 ├── Tool/           # ToolDefinition, ToolCall, ToolResult
+├── skill-macro-llm-php/  # AI agent skill document (SKILL.md for coding assistants)
 └── MacroLLM.php    # Main entry point and macro registration
 ```
 
