@@ -47,6 +47,30 @@ abstract class AbstractProvider implements ProviderInterface
         return $key;
     }
 
+    /**
+     * Makes a GET request to the given endpoint path and returns the raw
+     * decoded JSON response. Returns [] silently on any failure.
+     *
+     * @return array<string, mixed>
+     */
+    protected function fetchRawModels(string $endpointPath): array
+    {
+        try {
+            $response = \Illuminate\Support\Facades\Http::withHeaders($this->headers())
+                ->baseUrl($this->baseUrl())
+                ->timeout(10)
+                ->get($endpointPath);
+
+            if ($response->failed()) {
+                return [];
+            }
+
+            return $response->json() ?? [];
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
     /** Default base URL when none is configured. */
     abstract protected function defaultBaseUrl(): string;
 

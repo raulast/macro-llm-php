@@ -19,6 +19,8 @@ final class ProviderFactory
         'openrouter' => OpenRouterProvider::class,
         'ollama' => OllamaProvider::class,
         'llamacpp' => LlamaCppProvider::class,
+        'opencode-zen-go' => OpenCodeZenGoProvider::class,
+        'opencode-zen-go-anthropic' => OpenCodeZenGoAnthropicProvider::class,
     ];
 
     /**

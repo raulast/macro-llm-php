@@ -162,8 +162,27 @@ final class GeminiProvider extends AbstractProvider
         );
     }
 
+    /**
+     * Fetches available models from Gemini's /models endpoint.
+     * Strips the "models/" prefix from each model name.
+     * Falls back to a curated static list if the endpoint is unavailable.
+     *
+     * @return string[]
+     */
     public function getModels(): array
     {
+        $response = $this->fetchRawModels('/models');
+        $names = array_column($response['models'] ?? [], 'name');
+        $models = array_values(array_filter(array_map(
+            fn(string $name) => str_replace('models/', '', $name),
+            $names,
+        )));
+
+        if (!empty($models)) {
+            return $models;
+        }
+
+        // Fallback static list
         return [
             'gemini-2.0-flash',
             'gemini-2.0-flash-lite',

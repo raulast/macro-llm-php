@@ -41,14 +41,4 @@ final class OpenRouterProvider extends OpenAICompatibleProvider
     {
         return $model;
     }
-
-    /**
-     * OpenRouter's model catalog is dynamic and contains thousands of models
-     * from multiple providers. Use the OpenRouter API to discover available models:
-     * GET https://openrouter.ai/api/v1/models
-     */
-    public function getModels(): array
-    {
-        return [];
-    }
 }

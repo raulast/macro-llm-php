@@ -60,7 +60,7 @@ return [
     | name and contains credentials, model defaults, and connection settings.
     |
     | Supported providers: openai, anthropic, gemini, groq, openrouter,
-    |                      ollama, llamacpp
+    |                      ollama, llamacpp, opencode-zen-go, opencode-zen-go-anthropic
     |
     | API keys support environment variable patterns: '${ENV_VAR_NAME}'
     | which are resolved lazily at access time via $_ENV or getenv().
@@ -141,6 +141,34 @@ return [
             'default_model' => 'default',
             // 'base_url' => 'http://localhost:8080/v1',
             // 'timeout' => 120,
+            // 'retries' => 0,
+            // 'extra_headers' => [],
+        ],
+
+        'opencode-zen-go' => [
+            // API key from https://opencode.ai Zen console.
+            // The same key works for both opencode-zen-go and opencode-zen-go-anthropic.
+            'api_key' => '${OPENCODE_ZEN_API_KEY}',
+
+            // Default model for OpenAI-compatible Go models (GLM, Kimi, DeepSeek, MiMo).
+            'default_model' => 'deepseek-v3-0324',
+
+            // Base URL is fixed — do not override.
+            // 'base_url' => null,
+
+            // 'timeout' => 30,
+            // 'retries' => 0,
+            // 'extra_headers' => [],
+        ],
+
+        'opencode-zen-go-anthropic' => [
+            // Same API key as opencode-zen-go.
+            'api_key' => '${OPENCODE_ZEN_API_KEY}',
+
+            // Default model for Anthropic-compatible Go models (MiniMax, Qwen).
+            'default_model' => 'MiniMax-M3',
+
+            // 'timeout' => 30,
             // 'retries' => 0,
             // 'extra_headers' => [],
         ],

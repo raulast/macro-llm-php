@@ -2,10 +2,10 @@
 
 Provider-agnostic AI client for Laravel, Slim 4, and standalone PHP.
 
-[![PHP Version](https://img.shields.io/packagist/php-v/macro-llm/macro-llm-php)](https://packagist.org/packages/macro-llm/macro-llm-php)
+[![PHP Version](https://img.shields.io/packagist/php-v/raulast/macro-llm-php)](https://packagist.org/packages/raulast/macro-llm-php)
 [![Laravel](https://img.shields.io/badge/Laravel-10.x%20%7C%2011.x-red)](https://laravel.com)
-[![License](https://img.shields.io/packagist/l/macro-llm/macro-llm-php)](LICENSE)
-[![Packagist](https://img.shields.io/packagist/v/macro-llm/macro-llm-php)](https://packagist.org/packages/macro-llm/macro-llm-php)
+[![License](https://img.shields.io/packagist/l/raulast/macro-llm-php)](LICENSE)
+[![Packagist](https://img.shields.io/packagist/v/raulast/macro-llm-php)](https://packagist.org/packages/raulast/macro-llm-php)
 
 ## Overview
 
@@ -50,7 +50,7 @@ On top of the provider layer, MacroLLM provides a full agentic stack: **Skills**
 ## Installation
 
 ```bash
-composer require macro-llm/macro-llm-php
+composer require raulast/macro-llm-php
 ```
 
 Laravel auto-discovery registers the ServiceProvider automatically. Optionally publish the config:

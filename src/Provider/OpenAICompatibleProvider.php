@@ -135,14 +135,16 @@ class OpenAICompatibleProvider extends AbstractProvider
     }
 
     /**
-     * Base implementation returns empty array.
-     * Concrete providers override with their static model list.
+     * Fetches available models from the provider's /models endpoint.
+     * Returns model IDs from the OpenAI-format response (data[].id).
+     * Returns [] if the endpoint is unavailable or returns an error.
      *
      * @return string[]
      */
     public function getModels(): array
     {
-        return [];
+        $response = $this->fetchRawModels('/models');
+        return array_values(array_filter(array_column($response['data'] ?? [], 'id')));
     }
 
     /**

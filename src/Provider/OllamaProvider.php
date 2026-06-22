@@ -41,11 +41,13 @@ final class OllamaProvider extends OpenAICompatibleProvider
     }
 
     /**
-     * Ollama's available models depend on what has been pulled locally.
-     * Use `ollama list` or GET /api/tags to discover installed models.
+     * Fetches locally installed models from Ollama's /v1/models endpoint.
+     * Returns model IDs reflecting what has been pulled via `ollama pull`.
+     *
+     * @return string[]
      */
     public function getModels(): array
     {
-        return [];
+        return parent::getModels();
     }
 }

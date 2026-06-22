@@ -156,8 +156,22 @@ final class AnthropicProvider extends AbstractProvider
         return null;
     }
 
+    /**
+     * Fetches available models from Anthropic's /models endpoint.
+     * Falls back to a curated static list if the endpoint is unavailable.
+     *
+     * @return string[]
+     */
     public function getModels(): array
     {
+        $response = $this->fetchRawModels('/models');
+        $models = array_values(array_filter(array_column($response['data'] ?? [], 'id')));
+
+        if (!empty($models)) {
+            return $models;
+        }
+
+        // Fallback static list
         return [
             'claude-opus-4-5',
             'claude-sonnet-4-5',

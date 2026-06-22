@@ -33,11 +33,13 @@ final class LlamaCppProvider extends OpenAICompatibleProvider
     }
 
     /**
-     * llama.cpp serves a single model loaded at server startup.
-     * The model identifier depends on the server configuration.
+     * Returns the currently loaded model from llama.cpp's /v1/models endpoint.
+     * Reflects the single model loaded at server startup.
+     *
+     * @return string[]
      */
     public function getModels(): array
     {
-        return [];
+        return parent::getModels();
     }
 }

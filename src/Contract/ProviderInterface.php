@@ -33,11 +33,13 @@ interface ProviderInterface
     public function endpointPath(): string;
 
     /**
-     * Returns a static list of model identifiers supported by this provider.
-     * Providers with dynamic or user-defined catalogs (Ollama, LlamaCpp, OpenRouter)
-     * return an empty array.
+     * Returns a list of model identifiers available from this provider.
      *
-     * This method MUST NOT make any HTTP requests.
+     * Providers with a /models discovery endpoint make an HTTP GET request
+     * to retrieve the live catalog. Providers without a discovery endpoint
+     * (or whose catalog is dynamic/user-defined) return an empty array.
+     *
+     * May make HTTP requests. Returns [] on any failure.
      *
      * @return string[]
      */
