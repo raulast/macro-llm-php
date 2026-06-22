@@ -14,7 +14,7 @@ use MacroLLM\Message\Usage;
 use MacroLLM\Tool\ToolCall;
 use MacroLLM\Tool\ToolDefinition;
 
-final class AnthropicProvider extends AbstractProvider
+class AnthropicProvider extends AbstractProvider
 {
     public function name(): string
     {
