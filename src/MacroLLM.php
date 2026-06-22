@@ -232,6 +232,26 @@ final class MacroLLM
     }
 
     /**
+     * Returns the list of available models for the given provider.
+     * Falls back to global default provider when $provider is null.
+     * Returns an empty array if no provider is available.
+     *
+     * @return string[]
+     */
+    public function models(?string $provider = null): array
+    {
+        try {
+            $providerName = $provider ?? $this->config->defaultProvider();
+            if ($providerName === null) {
+                return [];
+            }
+            return $this->providers->get($providerName)->getModels();
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
      * Register a single macro for a provider name.
      */
     private function registerMacro(string $providerName): void

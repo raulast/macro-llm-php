@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static \MacroLLM\Registry\SkillRegistry skills()
  * @method static \MacroLLM\Agent\Agent agent(\MacroLLM\Agent\AgentConfig $config)
  * @method static \MacroLLM\Orchestration\Orchestrator orchestrator()
+ * @method static array models(?string $provider = null)
  *
  * @see \MacroLLM\MacroLLM
  */

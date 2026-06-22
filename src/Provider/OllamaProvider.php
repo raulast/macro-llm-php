@@ -39,4 +39,13 @@ final class OllamaProvider extends OpenAICompatibleProvider
     {
         return $this->config->apiKey ?? '';
     }
+
+    /**
+     * Ollama's available models depend on what has been pulled locally.
+     * Use `ollama list` or GET /api/tags to discover installed models.
+     */
+    public function getModels(): array
+    {
+        return [];
+    }
 }

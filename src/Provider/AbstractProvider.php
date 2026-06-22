@@ -51,4 +51,6 @@ abstract class AbstractProvider implements ProviderInterface
     abstract protected function defaultBaseUrl(): string;
 
     abstract public function endpointPath(): string;
+
+    abstract public function getModels(): array;
 }

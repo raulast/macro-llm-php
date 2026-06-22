@@ -31,4 +31,15 @@ interface ProviderInterface
 
     /** Endpoint path appended to baseUrl() for API requests. */
     public function endpointPath(): string;
+
+    /**
+     * Returns a static list of model identifiers supported by this provider.
+     * Providers with dynamic or user-defined catalogs (Ollama, LlamaCpp, OpenRouter)
+     * return an empty array.
+     *
+     * This method MUST NOT make any HTTP requests.
+     *
+     * @return string[]
+     */
+    public function getModels(): array;
 }

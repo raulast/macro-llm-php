@@ -156,6 +156,22 @@ final class AnthropicProvider extends AbstractProvider
         return null;
     }
 
+    public function getModels(): array
+    {
+        return [
+            'claude-opus-4-5',
+            'claude-sonnet-4-5',
+            'claude-haiku-4-5',
+            'claude-3-7-sonnet-20250219',
+            'claude-3-5-sonnet-20241022',
+            'claude-3-5-sonnet-20240620',
+            'claude-3-5-haiku-20241022',
+            'claude-3-opus-20240229',
+            'claude-3-sonnet-20240229',
+            'claude-3-haiku-20240307',
+        ];
+    }
+
     private function mapMessage(InternalMessage $message): array
     {
         $role = match ($message->role) {

@@ -135,6 +135,17 @@ class OpenAICompatibleProvider extends AbstractProvider
     }
 
     /**
+     * Base implementation returns empty array.
+     * Concrete providers override with their static model list.
+     *
+     * @return string[]
+     */
+    public function getModels(): array
+    {
+        return [];
+    }
+
+    /**
      * Maps InternalMessage[] to OpenAI messages format.
      *
      * @param InternalMessage[] $messages
