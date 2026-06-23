@@ -33,6 +33,11 @@ final class MacroLLMSlimExtension
             throw new ContainerBindingException(get_class($this->container));
         }
 
+        // Bootstrap the Http Facade when running outside a full Laravel application.
+        if (\Illuminate\Support\Facades\Facade::getFacadeApplication() === null) {
+            \Illuminate\Support\Facades\Http::swap(new \Illuminate\Http\Client\Factory());
+        }
+
         $cfg = Config::fromArray($this->config);
         $tools = new ToolRegistry();
         $skills = new SkillRegistry($tools);
