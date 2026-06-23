@@ -380,15 +380,46 @@ $slimApp->add($mcpMiddleware);
 
 ```php
 use MacroLLM\Integration\Slim\MacroLLMSlimExtension;
+use MacroLLM\Message\InternalRequest;
+use MacroLLM\Message\InternalMessage;
+use Slim\Factory\AppFactory;
+use DI\Container;
 
+// PHP-DI container (composer require php-di/php-di)
+$container = new Container();
+AppFactory::setContainer($container);
+$app = AppFactory::create();
+
+// Register MacroLLM — reads config/macro-llm.php from your project root
 $extension = new MacroLLMSlimExtension($container, require __DIR__ . '/config/macro-llm.php');
 $extension->register();
 
-// Now available in container:
-$llm           = $container->get(\MacroLLM\MacroLLM::class);
-$mcpServer     = $container->get(\MacroLLM\Mcp\MCPServer::class);
-$mcpMiddleware = $container->get(\MacroLLM\Mcp\MCPServerMiddleware::class);
+// Use in a route
+$app->get('/chat', function ($request, $response) use ($container) {
+    $llm = $container->get(\MacroLLM\MacroLLM::class);
+    $result = $llm->chat(new InternalRequest([InternalMessage::user('Hello!')]));
+    $response->getBody()->write($result->content ?? '');
+    return $response;
+});
+
+$app->run();
 ```
+
+The `config/macro-llm.php` is created by you in your project (not auto-published):
+```php
+// your-project/config/macro-llm.php
+return [
+    'default_provider' => 'ollama',
+    'providers' => [
+        'ollama' => ['api_key' => 'local', 'default_model' => 'llama3.2'],
+    ],
+];
+```
+
+After `register()`, the container holds:
+- `MacroLLM::class`
+- `MCPServer::class`
+- `MCPServerMiddleware::class`
 
 ### Recipe 17: Custom Provider
 
@@ -579,3 +610,6 @@ try {
 - **`Skill` is abstract** — to hydrate from DB/array in application code, extend it first: `final class DynamicSkill extends Skill {}`, then call `DynamicSkill::fromArray($data)`.
 - **`ProviderConfig`** has no `fromArray()` — instantiate directly: `new ProviderConfig(apiKey: ..., defaultModel: ..., baseUrl: ..., ...)`.
 - `illuminate/http` and `illuminate/support` constraints must include `^12.0|^13.0` for Laravel 13 compatibility.
+- **`MacroLLM::standalone()`** auto-bootstraps the `Http` Facade via `Facade::getFacadeApplication() === null` + `Http::swap(new Factory())`. No manual setup needed outside Laravel.
+- **`MacroLLMSlimExtension`** applies the same Http Facade bootstrap. Requires a PSR-11 container with `set()` — use PHP-DI (`php-di/php-di`). Slim's built-in container does NOT have `set()`.
+- The `config/macro-llm.php` in Slim integration is created by the user in their project — it is NOT auto-published (unlike Laravel's `vendor:publish`).

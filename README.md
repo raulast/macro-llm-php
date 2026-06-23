@@ -348,12 +348,53 @@ $app->middleware(MCPServerMiddleware::class);
 
 ```php
 use MacroLLM\Integration\Slim\MacroLLMSlimExtension;
+use MacroLLM\Message\InternalRequest;
+use MacroLLM\Message\InternalMessage;
+use Slim\Factory\AppFactory;
+use DI\Container;
 
-$extension = new MacroLLMSlimExtension($container, require 'config/macro-llm.php');
+// PHP-DI container (composer require php-di/php-di)
+$container = new Container();
+AppFactory::setContainer($container);
+$app = AppFactory::create();
+
+// Register MacroLLM into the container
+$extension = new MacroLLMSlimExtension($container, require __DIR__ . '/config/macro-llm.php');
 $extension->register();
 
-$macroLLM = $container->get(\MacroLLM\MacroLLM::class);
+// Use MacroLLM inside a route
+$app->get('/chat', function ($request, $response) use ($container) {
+    $llm    = $container->get(\MacroLLM\MacroLLM::class);
+    $result = $llm->chat(new InternalRequest([
+        InternalMessage::user('Hello!'),
+    ]));
+    $response->getBody()->write($result->content ?? '');
+    return $response;
+});
+
+$app->run();
 ```
+
+> `MacroLLMSlimExtension` requires the container to support `set()`. PHP-DI's `Container` does.
+> Slim's built-in container does not — use PHP-DI or another writable PSR-11 container.
+
+The `config/macro-llm.php` file lives in your project (not in the package) and returns a plain array:
+
+```php
+// your-project/config/macro-llm.php
+return [
+    'default_provider' => 'ollama',
+    'providers' => [
+        'ollama' => [
+            'api_key'       => getenv('OLLAMA_API_KEY') ?: 'local',
+            'default_model' => 'llama3.2',
+            'base_url'      => 'http://localhost:11434/v1',
+        ],
+    ],
+];
+```
+
+Same format as `Config::fromArray()` — see the [Configuration](#configuration) section.
 
 ## Directory Structure
 
