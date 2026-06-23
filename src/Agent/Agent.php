@@ -22,14 +22,22 @@ final class Agent
 
     /**
      * Run the agent with automatic tool-call loop.
+     *
+     * If {@see AgentConfig::$onStep} is set, the callback is invoked at each
+     * meaningful event: LlmResponse, ToolCall (before execution), ToolResult
+     * (after execution), and FinalResponse (before returning). Callback
+     * exceptions propagate to the caller unmodified.
      */
     public function run(string|InternalRequest $input): InternalResponse
     {
         $request = $this->buildInitialRequest($input);
         $providerName = $this->resolveProvider();
         $iterations = 0;
+        $stepIteration = 0;
 
         do {
+            $stepIteration++;
+
             $response = $this->llm->chat($request, $providerName);
 
             // Append assistant message to memory
@@ -38,8 +46,20 @@ final class Agent
             );
 
             if (!$response->hasToolCalls()) {
+                $this->fireStep(new AgentStep(
+                    type: AgentStepType::FinalResponse,
+                    iteration: $stepIteration,
+                    response: $response,
+                ));
+
                 return $response;
             }
+
+            $this->fireStep(new AgentStep(
+                type: AgentStepType::LlmResponse,
+                iteration: $stepIteration,
+                response: $response,
+            ));
 
             if (++$iterations >= $this->config->maxIterations) {
                 throw new MaxToolIterationsException($iterations, $response);
@@ -54,6 +74,12 @@ final class Agent
             foreach ($response->toolCalls as $toolCall) {
                 $definition = $this->llm->tools()->get($toolCall->name);
 
+                $this->fireStep(new AgentStep(
+                    type: AgentStepType::ToolCall,
+                    iteration: $stepIteration,
+                    toolCall: $toolCall,
+                ));
+
                 try {
                     $result = ($definition->callable)($toolCall->arguments);
                     $toolResult = ToolResult::ok($toolCall->id, $toolCall->name, $result);
@@ -61,11 +87,28 @@ final class Agent
                     $toolResult = ToolResult::error($toolCall->id, $toolCall->name, $e->getMessage());
                 }
 
+                $this->fireStep(new AgentStep(
+                    type: AgentStepType::ToolResult,
+                    iteration: $stepIteration,
+                    toolCall: $toolCall,
+                    toolResult: $toolResult,
+                ));
+
                 $toolMessage = InternalMessage::tool($toolResult);
                 $this->config->memory->append($toolMessage);
                 $request = $request->appended($toolMessage);
             }
         } while (true);
+    }
+
+    /**
+     * Invoke the onStep callback if configured. Exceptions propagate to caller.
+     */
+    private function fireStep(AgentStep $step): void
+    {
+        if ($this->config->onStep !== null) {
+            ($this->config->onStep)($step);
+        }
     }
 
     /**
