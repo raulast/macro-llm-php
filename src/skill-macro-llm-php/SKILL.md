@@ -41,6 +41,8 @@ php artisan vendor:publish --tag=macro-llm-config
 | `ProviderConfig` | `MacroLLM\Config` | Per-provider settings |
 | `Skill` (abstract) | `MacroLLM\Skill` | Reusable prompt+tools bundle |
 | `AgentConfig` | `MacroLLM\Agent` | Agent configuration |
+| `AgentStep` | `MacroLLM\Agent` | Value object for a single loop event |
+| `AgentStepType` (enum) | `MacroLLM\Agent` | LlmResponse\|ToolCall\|ToolResult\|FinalResponse |
 | `Agent` | `MacroLLM\Agent` | Autonomous tool-call loop |
 | `NullMemory` | `MacroLLM\Agent\Memory` | Stateless memory (default) |
 | `InMemoryMemory` | `MacroLLM\Agent\Memory` | Stateful in-process memory |
@@ -234,6 +236,45 @@ class SupportSkill extends Skill
 
 $llm->skills()->register(new SupportSkill('Laravel'));
 ```
+
+### Recipe 10.5: Agent Step Callback (Observability)
+
+`Agent` es `final` — el closure `onStep` en `AgentConfig` es el único mecanismo para observar
+los eventos del loop sin modificar ni extender la clase.
+
+```php
+use MacroLLM\Agent\AgentConfig;
+use MacroLLM\Agent\AgentStep;
+use MacroLLM\Agent\AgentStepType;
+
+$agent = $llm->agent(new AgentConfig(
+    provider:      'openai',
+    maxIterations: 10,
+    onStep: function (AgentStep $step): void {
+        echo match ($step->type) {
+            AgentStepType::LlmResponse   => "[{$step->iteration}] LLM → tool calls incoming\n",
+            AgentStepType::ToolCall      => "[{$step->iteration}] → {$step->toolCall->name}(" . json_encode($step->toolCall->arguments) . ")\n",
+            AgentStepType::ToolResult    => "[{$step->iteration}] ← " . json_encode($step->toolResult->content) . " [{$step->toolResult->status->value}]\n",
+            AgentStepType::FinalResponse => "[{$step->iteration}] DONE: {$step->response->content}\n",
+        };
+    },
+));
+
+$response = $agent->run('What is the weather in Paris?');
+```
+
+**AgentStep fields per type:**
+
+| Type | `response` | `toolCall` | `toolResult` |
+|---|---|---|---|
+| `LlmResponse` | ✓ (has tool calls) | — | — |
+| `ToolCall` | — | ✓ | — |
+| `ToolResult` | — | ✓ | ✓ |
+| `FinalResponse` | ✓ (no tool calls) | — | — |
+
+- `iteration` is 1-based, independent from the iteration guard counter.
+- Exceptions thrown inside the callback propagate to the `agent->run()` caller.
+- `onStep: null` (default) has zero overhead on the hot path.
 
 ### Recipe 11: Conversation Memory
 
@@ -466,6 +507,7 @@ new AgentConfig(
     skillSeparator: "\n\n",            // separator between composed skill prompts
     maxIterations:  10,                // max tool-call loop iterations
     memory:         new InMemoryMemory(), // NullMemory (default) or InMemoryMemory
+    onStep:         fn(AgentStep $s) => log($s), // optional; null = disabled (default)
 );
 ```
 
@@ -533,3 +575,7 @@ try {
 - `ProviderRegistry::register()` replaces on duplicate provider name (no exception).
 - `NullMemory` is the default memory — agents are stateless unless `InMemoryMemory` is explicitly set.
 - All package exceptions extend `MacroLLMException` — catch-all with a single `catch (MacroLLMException)`.
+- **`Usage` token fields**: `promptTokens`, `completionTokens`, `totalTokens` — there is NO `inputTokens` or `outputTokens`.
+- **`Skill` is abstract** — to hydrate from DB/array in application code, extend it first: `final class DynamicSkill extends Skill {}`, then call `DynamicSkill::fromArray($data)`.
+- **`ProviderConfig`** has no `fromArray()` — instantiate directly: `new ProviderConfig(apiKey: ..., defaultModel: ..., baseUrl: ..., ...)`.
+- `illuminate/http` and `illuminate/support` constraints must include `^12.0|^13.0` for Laravel 13 compatibility.

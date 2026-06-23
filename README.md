@@ -234,6 +234,45 @@ class SupportSkill extends Skill
 }
 ```
 
+### Agent Step Callback
+
+Observe each event in the agent's tool-call loop without modifying or extending `Agent`
+(which is `final`). Pass an `onStep` closure to `AgentConfig` — it receives an
+`AgentStep` value object at every meaningful point in the loop.
+
+```php
+use MacroLLM\Agent\AgentConfig;
+use MacroLLM\Agent\AgentStep;
+use MacroLLM\Agent\AgentStepType;
+
+$agent = $llm->agent(new AgentConfig(
+    provider: 'openai',
+    maxIterations: 10,
+    onStep: function (AgentStep $step): void {
+        echo match ($step->type) {
+            AgentStepType::LlmResponse    => "[{$step->iteration}] LLM responded with tool calls\n",
+            AgentStepType::ToolCall       => "[{$step->iteration}] → calling {$step->toolCall->name}\n",
+            AgentStepType::ToolResult     => "[{$step->iteration}] ← result: " . json_encode($step->toolResult->content) . "\n",
+            AgentStepType::FinalResponse  => "[{$step->iteration}] Final: {$step->response->content}\n",
+        };
+    },
+));
+
+$response = $agent->run('What is the weather in Buenos Aires?');
+```
+
+**Step types:**
+
+| Type | Fires when | Populated fields |
+|------|-----------|-----------------|
+| `LlmResponse` | LLM responds with tool calls (loop continues) | `response` |
+| `ToolCall` | Before a tool is executed | `toolCall` |
+| `ToolResult` | After a tool finishes (success or error) | `toolCall`, `toolResult` |
+| `FinalResponse` | LLM responds with no tool calls (loop exits) | `response` |
+
+The callback is **fire-and-forget**: exceptions propagate to the `run()` caller.
+Passing `null` (the default) has zero overhead on the hot path.
+
 ### Conversation Memory
 
 ```php
