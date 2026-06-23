@@ -50,10 +50,10 @@ final class MacroLLM
      */
     public static function standalone(Config $config): self
     {
-        // Bootstrap the Http Facade if it hasn't been set up yet.
-        // This allows standalone usage without a full Laravel application.
-        if (!Http::hasFacadeRoot()) {
-            Http::swap(new \Illuminate\Http\Client\Factory());
+        // Bootstrap the Http Facade if running outside a Laravel application.
+        // getFacadeApplication() is a real static method — safe to call without a root.
+        if (\Illuminate\Support\Facades\Facade::getFacadeApplication() === null) {
+            \Illuminate\Support\Facades\Http::swap(new \Illuminate\Http\Client\Factory());
         }
 
         $tools = new ToolRegistry();
