@@ -44,9 +44,18 @@ final class MacroLLM
 
     /**
      * Standalone bootstrap without a DI container.
+     *
+     * Automatically bootstraps the Illuminate HTTP client Facade so the
+     * package works outside a Laravel application without any extra setup.
      */
     public static function standalone(Config $config): self
     {
+        // Bootstrap the Http Facade if it hasn't been set up yet.
+        // This allows standalone usage without a full Laravel application.
+        if (!Http::hasFacadeRoot()) {
+            Http::swap(new \Illuminate\Http\Client\Factory());
+        }
+
         $tools = new ToolRegistry();
         $skills = new SkillRegistry($tools);
         $providers = new ProviderRegistry();

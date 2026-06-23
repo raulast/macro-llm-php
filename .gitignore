@@ -3,3 +3,4 @@ vendor
 .atl
 .env
 .idea
+composer.lock

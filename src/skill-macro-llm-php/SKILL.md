@@ -49,7 +49,7 @@ php artisan vendor:publish --tag=macro-llm-config
 | `Orchestrator` | `MacroLLM\Orchestration` | Multi-agent coordinator |
 | `OrchestratorResult` | `MacroLLM\Orchestration` | Aggregated agent outcomes |
 | `AgentOutcome` | `MacroLLM\Orchestration` | Single agent result |
-| `RoutingStrategy` (enum) | `MacroLLM\Orchestration` | Sequential\|Parallel\|Conditional |
+| `RoutingStrategy` (enum) | `MacroLLM\Orchestration` | Sequential\|Parallel (Conditional declared, not yet implemented) |
 | `ErrorStrategy` (enum) | `MacroLLM\Orchestration` | Stop\|Continue |
 | `MCPClient` | `MacroLLM\Mcp` | MCP server consumer |
 | `MCPServer` | `MacroLLM\Mcp` | MCP server implementation |
