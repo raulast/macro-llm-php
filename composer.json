@@ -1,5 +1,5 @@
 {
-    "version": "0.2.0",
+    "version": "0.3.0",
     "name": "raulast/macro-llm-php",
     "description": "Provider-agnostic AI client for Laravel, Slim 4, and standalone PHP. Extends Laravel's HTTP client via macros with support for OpenAI, Anthropic, Gemini, Groq, OpenRouter, Ollama, and llama.cpp. Includes tool calling, skills, agents, multi-agent orchestration, and MCP server/client.",
     "type": "library",
