@@ -215,6 +215,100 @@ final class MacroLLM
     }
 
     /**
+     * Generate vector embeddings for one or more inputs.
+     * The provider must implement EmbeddingProviderInterface.
+     *
+     * @throws \RuntimeException if the provider does not support embeddings
+     */
+    public function embed(
+        \MacroLLM\Message\EmbeddingRequest $request,
+        ?string $provider = null,
+    ): \MacroLLM\Message\EmbeddingResponse {
+        $name     = $provider ?? $this->config->defaultProvider() ?? throw new \RuntimeException('No provider configured.');
+        $instance = $this->providers->get($name);
+
+        if (!$instance instanceof \MacroLLM\Contract\EmbeddingProviderInterface) {
+            throw new \RuntimeException("Provider '{$name}' does not support embeddings. Use a provider that implements EmbeddingProviderInterface.");
+        }
+
+        return $instance->embed($request);
+    }
+
+    /**
+     * Generate an image from a text prompt.
+     * The provider must implement ImageProviderInterface.
+     *
+     * @throws \RuntimeException if the provider does not support image generation
+     */
+    public function image(
+        \MacroLLM\Message\ImageRequest $request,
+        ?string $provider = null,
+    ): \MacroLLM\Message\ImageResponse {
+        $name     = $provider ?? $this->config->defaultProvider() ?? throw new \RuntimeException('No provider configured.');
+        $instance = $this->providers->get($name);
+
+        if (!$instance instanceof \MacroLLM\Contract\ImageProviderInterface) {
+            throw new \RuntimeException("Provider '{$name}' does not support image generation. Use a provider that implements ImageProviderInterface.");
+        }
+
+        return $instance->generate($request);
+    }
+
+    /**
+     * Synthesize speech from text (TTS).
+     * The provider must implement AudioProviderInterface.
+     */
+    public function audio(
+        \MacroLLM\Message\AudioRequest $request,
+        ?string $provider = null,
+    ): \MacroLLM\Message\AudioResponse {
+        $name     = $provider ?? $this->config->defaultProvider() ?? throw new \RuntimeException('No provider configured.');
+        $instance = $this->providers->get($name);
+
+        if (!$instance instanceof \MacroLLM\Contract\AudioProviderInterface) {
+            throw new \RuntimeException("Provider '{$name}' does not support audio synthesis. Use a provider that implements AudioProviderInterface.");
+        }
+
+        return $instance->synthesize($request);
+    }
+
+    /**
+     * Transcribe audio to text (STT).
+     * The provider must implement AudioProviderInterface.
+     */
+    public function transcribe(
+        \MacroLLM\Message\TranscriptionRequest $request,
+        ?string $provider = null,
+    ): \MacroLLM\Message\TranscriptionResponse {
+        $name     = $provider ?? $this->config->defaultProvider() ?? throw new \RuntimeException('No provider configured.');
+        $instance = $this->providers->get($name);
+
+        if (!$instance instanceof \MacroLLM\Contract\AudioProviderInterface) {
+            throw new \RuntimeException("Provider '{$name}' does not support transcription. Use a provider that implements AudioProviderInterface.");
+        }
+
+        return $instance->transcribe($request);
+    }
+
+    /**
+     * Rerank a list of documents by relevance to a query.
+     * The provider must implement RerankingProviderInterface.
+     */
+    public function rerank(
+        \MacroLLM\Message\RerankingRequest $request,
+        ?string $provider = null,
+    ): \MacroLLM\Message\RerankingResponse {
+        $name     = $provider ?? $this->config->defaultProvider() ?? throw new \RuntimeException('No provider configured.');
+        $instance = $this->providers->get($name);
+
+        if (!$instance instanceof \MacroLLM\Contract\RerankingProviderInterface) {
+            throw new \RuntimeException("Provider '{$name}' does not support reranking. Use a provider that implements RerankingProviderInterface.");
+        }
+
+        return $instance->rerank($request);
+    }
+
+    /**
      * Returns the list of available models for the given provider.
      * Falls back to global default provider when $provider is null.
      * Returns an empty array if no provider is available.

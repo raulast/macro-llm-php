@@ -4,8 +4,15 @@ declare(strict_types=1);
 
 namespace MacroLLM\Provider;
 
-final class MistralProvider extends OpenAICompatibleProvider
+use MacroLLM\Contract\AudioProviderInterface;
+use MacroLLM\Contract\EmbeddingProviderInterface;
+
+final class MistralProvider extends OpenAICompatibleProvider implements
+    EmbeddingProviderInterface,
+    AudioProviderInterface
 {
+    use OpenAICapabilitiesTrait;
+
     public function name(): string
     {
         return 'mistral';

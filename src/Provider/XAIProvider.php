@@ -4,8 +4,15 @@ declare(strict_types=1);
 
 namespace MacroLLM\Provider;
 
-final class XAIProvider extends OpenAICompatibleProvider
+use MacroLLM\Contract\EmbeddingProviderInterface;
+use MacroLLM\Contract\ImageProviderInterface;
+
+final class XAIProvider extends OpenAICompatibleProvider implements
+    EmbeddingProviderInterface,
+    ImageProviderInterface
 {
+    use OpenAICapabilitiesTrait;
+
     public function name(): string
     {
         return 'xai';

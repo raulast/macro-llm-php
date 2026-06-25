@@ -26,6 +26,7 @@ final class ProviderFactory
         'deepseek'                   => DeepSeekProvider::class,
         'xai'                        => XAIProvider::class,
         'cohere'                     => CohereProvider::class,
+        'elevenlabs'                 => ElevenLabsProvider::class,
     ];
 
     /**

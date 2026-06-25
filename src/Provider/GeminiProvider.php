@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MacroLLM\Provider;
 
+use MacroLLM\Contract\EmbeddingProviderInterface;
+use MacroLLM\Contract\ImageProviderInterface;
 use MacroLLM\Message\ContentPart;
 use MacroLLM\Message\ContentPartType;
 use MacroLLM\Message\FinishReason;
@@ -16,7 +18,9 @@ use MacroLLM\Message\Usage;
 use MacroLLM\Tool\ToolCall;
 use MacroLLM\Tool\ToolDefinition;
 
-final class GeminiProvider extends AbstractProvider
+final class GeminiProvider extends AbstractProvider implements
+    EmbeddingProviderInterface,
+    ImageProviderInterface
 {
     public function name(): string
     {
@@ -197,6 +201,76 @@ final class GeminiProvider extends AbstractProvider
             'gemini-1.0-pro',
         ];
     }
+
+    // ── EmbeddingProviderInterface ───────────────────────────────────────────
+
+    public function embed(\MacroLLM\Message\EmbeddingRequest $request): \MacroLLM\Message\EmbeddingResponse
+    {
+        $model = $request->model ?? $this->config->defaultModel;
+
+        // Use batchEmbedContents for multiple inputs, embedContent for single
+        if (count($request->inputs) === 1) {
+            $response = $this->fetchRaw("/models/{$model}:embedContent", [
+                'model'   => "models/{$model}",
+                'content' => ['parts' => [['text' => $request->inputs[0]]]],
+            ]);
+            $embeddings = [[$response['embedding']['values'] ?? []]];
+            // flatten: embeddings is [[float[]]]
+            $embeddings = [$response['embedding']['values'] ?? []];
+        } else {
+            $requests = array_map(
+                fn(string $input) => [
+                    'model'   => "models/{$model}",
+                    'content' => ['parts' => [['text' => $input]]],
+                ],
+                $request->inputs,
+            );
+
+            if ($request->dimensions !== null) {
+                foreach ($requests as &$req) {
+                    $req['outputDimensionality'] = $request->dimensions;
+                }
+            }
+
+            $response   = $this->fetchRaw("/models/{$model}:batchEmbedContents", ['requests' => $requests]);
+            $embeddings = array_map(fn(array $e) => $e['values'], $response['embeddings'] ?? []);
+        }
+
+        return new \MacroLLM\Message\EmbeddingResponse($embeddings, new \MacroLLM\Message\Usage());
+    }
+
+    // ── ImageProviderInterface ───────────────────────────────────────────────
+
+    public function generate(\MacroLLM\Message\ImageRequest $request): \MacroLLM\Message\ImageResponse
+    {
+        $model   = $request->model ?? $this->config->defaultModel;
+        $payload = [
+            'contents'            => [['parts' => [['text' => $request->prompt]]]],
+            'generationConfig'    => ['responseModalities' => ['IMAGE', 'TEXT']],
+        ];
+
+        $response = $this->fetchRaw("/models/{$model}:generateContent", $payload);
+
+        $images = [];
+        foreach ($response['candidates'][0]['content']['parts'] ?? [] as $part) {
+            if (isset($part['inlineData']['data'])) {
+                $images[] = $part['inlineData']['data'];
+            }
+        }
+
+        return new \MacroLLM\Message\ImageResponse($images);
+    }
+
+    private function fetchRaw(string $path, array $payload): array
+    {
+        return (new \MacroLLM\Http\HttpClient(
+            $this->baseUrl(),
+            $this->headers(),
+            $this->config->timeout ?? 60,
+        ))->post($path, $payload);
+    }
+
+    // ── ProviderInterface ────────────────────────────────────────────────────
 
     private function mapMessage(InternalMessage $message): array
     {

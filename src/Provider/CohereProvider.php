@@ -4,6 +4,13 @@ declare(strict_types=1);
 
 namespace MacroLLM\Provider;
 
+use MacroLLM\Contract\EmbeddingProviderInterface;
+use MacroLLM\Contract\RerankingProviderInterface;
+use MacroLLM\Message\EmbeddingRequest;
+use MacroLLM\Message\EmbeddingResponse;
+use MacroLLM\Message\RankedDocument;
+use MacroLLM\Message\RerankingRequest;
+use MacroLLM\Message\RerankingResponse;
 use MacroLLM\Message\FinishReason;
 use MacroLLM\Message\InternalMessage;
 use MacroLLM\Message\InternalRequest;
@@ -17,7 +24,9 @@ use MacroLLM\Tool\ToolDefinition;
  * Cohere provider — uses native /v2/chat endpoint (not OpenAI-compatible).
  * Supports streaming via SSE (event: text-generation / stream-end).
  */
-final class CohereProvider extends AbstractProvider
+final class CohereProvider extends AbstractProvider implements
+    EmbeddingProviderInterface,
+    RerankingProviderInterface
 {
     public function name(): string
     {
@@ -134,5 +143,57 @@ final class CohereProvider extends AbstractProvider
     {
         $response = $this->fetchRawModels('/models?endpoint=chat');
         return array_column($response['models'] ?? [], 'name');
+    }
+
+    // ── EmbeddingProviderInterface ──────────────────────────────────────────
+
+    public function embed(EmbeddingRequest $request): EmbeddingResponse
+    {
+        $response = (new \MacroLLM\Http\HttpClient(
+            $this->baseUrl(),
+            $this->headers(),
+            $this->config->timeout ?? 30,
+        ))->post('/embed', [
+            'model'           => $request->model ?? $this->config->defaultModel,
+            'texts'           => $request->inputs,
+            'input_type'      => 'search_document',
+            'embedding_types' => ['float'],
+        ]);
+
+        return new EmbeddingResponse(
+            $response['embeddings']['float'] ?? [],
+            new \MacroLLM\Message\Usage(),
+        );
+    }
+
+    // ── RerankingProviderInterface ──────────────────────────────────────────
+
+    public function rerank(RerankingRequest $request): RerankingResponse
+    {
+        $payload = [
+            'model'     => $request->model ?? $this->config->defaultModel,
+            'query'     => $request->query,
+            'documents' => $request->documents,
+        ];
+        if ($request->limit !== null) {
+            $payload['top_n'] = $request->limit;
+        }
+
+        $response = (new \MacroLLM\Http\HttpClient(
+            $this->baseUrl(),
+            $this->headers(),
+            $this->config->timeout ?? 30,
+        ))->post('/rerank', $payload);
+
+        $results = array_map(
+            fn(array $r) => new RankedDocument(
+                index:    $r['index'],
+                document: $request->documents[$r['index']] ?? '',
+                score:    (float) $r['relevance_score'],
+            ),
+            $response['results'] ?? [],
+        );
+
+        return new RerankingResponse($results);
     }
 }

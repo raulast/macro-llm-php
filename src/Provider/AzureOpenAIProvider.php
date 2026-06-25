@@ -5,13 +5,17 @@ declare(strict_types=1);
 namespace MacroLLM\Provider;
 
 use MacroLLM\Config\ProviderConfig;
+use MacroLLM\Contract\EmbeddingProviderInterface;
+use MacroLLM\Contract\ImageProviderInterface;
 
 /**
  * Azure OpenAI — OpenAI-compatible, but auth uses `api-key` header (not Bearer).
- * Endpoint: https://{resource}.openai.azure.com/openai/deployments/{deployment}/chat/completions?api-version={version}
  */
-final class AzureOpenAIProvider extends OpenAICompatibleProvider
+final class AzureOpenAIProvider extends OpenAICompatibleProvider implements
+    EmbeddingProviderInterface,
+    ImageProviderInterface
 {
+    use OpenAICapabilitiesTrait;
     public function name(): string
     {
         return 'azure';
