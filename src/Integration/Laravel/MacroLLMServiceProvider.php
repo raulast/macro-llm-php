@@ -57,5 +57,12 @@ final class MacroLLMServiceProvider extends ServiceProvider
         $this->publishes([
             __DIR__ . '/../../../config/macro-llm.php' => config_path('macro-llm.php'),
         ], 'macro-llm-config');
+
+        // Register PendingRequest macros (Http::openai(...), etc.)
+        $macroLLM = $this->app->make('macro-llm');
+        foreach ($macroLLM->providers()->all() as $name => $_) {
+            $macroLLM->registerMacro($name);
+        }
+        $macroLLM->providers()->onRegister(fn(string $name) => $macroLLM->registerMacro($name));
     }
 }

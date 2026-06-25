@@ -1,4 +1,5 @@
 {
+    "version": "0.2.0",
     "name": "raulast/macro-llm-php",
     "description": "Provider-agnostic AI client for Laravel, Slim 4, and standalone PHP. Extends Laravel's HTTP client via macros with support for OpenAI, Anthropic, Gemini, Groq, OpenRouter, Ollama, and llama.cpp. Includes tool calling, skills, agents, multi-agent orchestration, and MCP server/client.",
     "type": "library",
@@ -14,13 +15,16 @@
     "prefer-stable": true,
     "require": {
         "php": "^8.1",
+        "guzzlehttp/guzzle": "^7.0",
         "guzzlehttp/promises": "^2.0",
-        "illuminate/http": "^10.0|^11.0|^12.0|^13.0",
-        "illuminate/support": "^10.0|^11.0|^12.0|^13.0",
         "nyholm/psr7": "^1.0",
         "psr/container": "^2.0",
         "psr/http-message": "^1.0|^2.0",
         "psr/http-server-middleware": "^1.0"
+    },
+    "suggest": {
+        "illuminate/http": "Required for Laravel integration and Http::provider() macros",
+        "illuminate/support": "Required for Laravel integration"
     },
     "autoload": {
         "psr-4": {

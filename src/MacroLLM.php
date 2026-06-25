@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace MacroLLM;
 
 use Generator;
-use Illuminate\Http\Client\PendingRequest;
-use Illuminate\Support\Facades\Http;
 use MacroLLM\Agent\Agent;
 use MacroLLM\Agent\AgentConfig;
 use MacroLLM\Config\Config;
 use MacroLLM\Exception\MissingApiKeyException;
 use MacroLLM\Exception\ProviderRequestException;
 use MacroLLM\Exception\StreamInterruptedException;
+use MacroLLM\Http\HttpClient;
 use MacroLLM\Message\FinishReason;
 use MacroLLM\Message\InternalRequest;
 use MacroLLM\Message\InternalResponse;
@@ -37,25 +36,13 @@ final class MacroLLM
     ) {
         $this->tools = $tools ?? new ToolRegistry();
         $this->skills = $skills ?? new SkillRegistry($this->tools);
-
-        $this->registerMacros();
-        $this->providers->onRegister(fn(string $name) => $this->registerMacro($name));
     }
 
     /**
      * Standalone bootstrap without a DI container.
-     *
-     * Automatically bootstraps the Illuminate HTTP client Facade so the
-     * package works outside a Laravel application without any extra setup.
      */
     public static function standalone(Config $config): self
     {
-        // Bootstrap the Http Facade if running outside a Laravel application.
-        // getFacadeApplication() is a real static method — safe to call without a root.
-        if (\Illuminate\Support\Facades\Facade::getFacadeApplication() === null) {
-            \Illuminate\Support\Facades\Http::swap(new \Illuminate\Http\Client\Factory());
-        }
-
         $tools = new ToolRegistry();
         $skills = new SkillRegistry($tools);
         $providers = new ProviderRegistry();
@@ -83,8 +70,7 @@ final class MacroLLM
     }
 
     /**
-     * Send a chat completion request.
-     */
+     * Send a chat completion request.     */
     public function chat(InternalRequest $request, ?string $provider = null): InternalResponse
     {
         $providerName = $this->resolveProviderName($provider, $request);
@@ -97,20 +83,13 @@ final class MacroLLM
 
         $payload = $providerInstance->toPayload($request);
 
-        $response = Http::withHeaders($providerInstance->headers())
-            ->baseUrl($providerInstance->baseUrl())
-            ->timeout($mergedConfig->timeout())
-            ->post($providerInstance->endpointPath(), $payload);
+        $data = (new HttpClient(
+            $providerInstance->baseUrl(),
+            $providerInstance->headers(),
+            $mergedConfig->timeout(),
+        ))->post($providerInstance->endpointPath(), $payload);
 
-        if ($response->failed()) {
-            throw new ProviderRequestException(
-                $providerName,
-                $response->status(),
-                $response->body(),
-            );
-        }
-
-        return $providerInstance->toResponse($response->json());
+        return $providerInstance->toResponse($data);
     }
 
     /**
@@ -147,24 +126,15 @@ final class MacroLLM
 
         $payload = $providerInstance->toPayload($streamRequest);
 
-        $response = Http::withHeaders($providerInstance->headers())
-            ->baseUrl($providerInstance->baseUrl())
-            ->timeout($mergedConfig->timeout())
-            ->withOptions(['stream' => true])
-            ->post($providerInstance->endpointPath(), $payload);
-
-        if ($response->failed()) {
-            throw new ProviderRequestException(
-                $providerName,
-                $response->status(),
-                $response->body(),
-            );
-        }
+        $body = (new HttpClient(
+            $providerInstance->baseUrl(),
+            $providerInstance->headers(),
+            $mergedConfig->timeout(),
+        ))->stream($providerInstance->endpointPath(), $payload);
 
         $chunks = [];
         $index = 0;
         $finished = false;
-        $body = $response->body();
 
         // Parse SSE events from the response body
         $lines = explode("\n", $body);
@@ -261,13 +231,18 @@ final class MacroLLM
     }
 
     /**
-     * Register a single macro for a provider name.
+     * Register a single PendingRequest macro for a provider name.
+     * Called from MacroLLMServiceProvider (Laravel only).
      */
-    private function registerMacro(string $providerName): void
+    public function registerMacro(string $providerName): void
     {
+        if (!class_exists(\Illuminate\Http\Client\PendingRequest::class)) {
+            return;
+        }
+
         $macroLLM = $this;
 
-        PendingRequest::macro($providerName, function (InternalRequest $request) use ($providerName, $macroLLM): InternalResponse {
+        \Illuminate\Http\Client\PendingRequest::macro($providerName, function (InternalRequest $request) use ($providerName, $macroLLM): InternalResponse {
             return $macroLLM->chat($request, $providerName);
         });
     }

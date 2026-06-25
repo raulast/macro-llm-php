@@ -7,6 +7,7 @@ namespace MacroLLM\Provider;
 use MacroLLM\Config\ProviderConfig;
 use MacroLLM\Contract\ProviderInterface;
 use MacroLLM\Exception\MissingApiKeyException;
+use MacroLLM\Http\HttpClient;
 
 abstract class AbstractProvider implements ProviderInterface
 {
@@ -56,16 +57,7 @@ abstract class AbstractProvider implements ProviderInterface
     protected function fetchRawModels(string $endpointPath): array
     {
         try {
-            $response = \Illuminate\Support\Facades\Http::withHeaders($this->headers())
-                ->baseUrl($this->baseUrl())
-                ->timeout(10)
-                ->get($endpointPath);
-
-            if ($response->failed()) {
-                return [];
-            }
-
-            return $response->json() ?? [];
+            return (new HttpClient($this->baseUrl(), $this->headers(), 10))->get($endpointPath);
         } catch (\Throwable) {
             return [];
         }
