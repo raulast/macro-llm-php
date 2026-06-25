@@ -20,6 +20,9 @@ final class Orchestrator
     /** @var array<string, Agent> */
     private array $agents = [];
 
+    /** @var array<string, ConditionalRoute> */
+    private array $conditionalRoutes = [];
+
     public function __construct(
         private RoutingStrategy $routing = RoutingStrategy::Sequential,
         private ErrorStrategy $errorStrategy = ErrorStrategy::Stop,
@@ -32,13 +35,24 @@ final class Orchestrator
     }
 
     /**
-     * Route task to registered agents per the configured strategy.
+     * Add an agent that only runs when $condition returns true.
+     * Automatically sets routing to Conditional.
+     *
+     * @param \Closure(AgentOutcome|null): bool $condition
      */
+    public function addConditionalAgent(string $name, Agent $agent, \Closure $condition): void
+    {
+        $this->agents[$name] = $agent;
+        $this->conditionalRoutes[$name] = new ConditionalRoute($name, $condition);
+        $this->routing = RoutingStrategy::Conditional;
+    }
+
     public function dispatch(string|InternalRequest $task): OrchestratorResult
     {
         return match ($this->routing) {
-            RoutingStrategy::Parallel => $this->dispatchParallel($task),
-            default => $this->dispatchSequential($task),
+            RoutingStrategy::Parallel    => $this->dispatchParallel($task),
+            RoutingStrategy::Conditional => $this->dispatchConditional($task),
+            default                      => $this->dispatchSequential($task),
         };
     }
 
@@ -118,5 +132,39 @@ final class Orchestrator
     private function elapsed(int $startNs): float
     {
         return (hrtime(true) - $startNs) / 1_000_000;
+    }
+
+    private function dispatchConditional(string|InternalRequest $task): OrchestratorResult
+    {
+        $outcomes = [];
+        $previousOutcome = null;
+
+        foreach ($this->agents as $name => $agent) {
+            $route = $this->conditionalRoutes[$name] ?? null;
+
+            // If no condition registered, always run (mixed mode support)
+            if ($route !== null && !($route->condition)($previousOutcome)) {
+                continue;
+            }
+
+            $start = hrtime(true);
+
+            try {
+                $response = $agent->run($task);
+                $outcome = new AgentOutcome($name, $response, $this->elapsed($start));
+                $outcomes[] = $outcome;
+                $previousOutcome = $outcome;
+            } catch (\Throwable $e) {
+                $outcome = new AgentOutcome($name, null, $this->elapsed($start), $e);
+                $outcomes[] = $outcome;
+                $previousOutcome = $outcome;
+
+                if ($this->errorStrategy === ErrorStrategy::Stop) {
+                    throw $e;
+                }
+            }
+        }
+
+        return new OrchestratorResult($outcomes);
     }
 }

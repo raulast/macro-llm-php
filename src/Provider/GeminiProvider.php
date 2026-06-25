@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MacroLLM\Provider;
 
+use MacroLLM\Message\ContentPart;
+use MacroLLM\Message\ContentPartType;
 use MacroLLM\Message\FinishReason;
 use MacroLLM\Message\InternalMessage;
 use MacroLLM\Message\InternalRequest;
@@ -199,51 +201,59 @@ final class GeminiProvider extends AbstractProvider
     private function mapMessage(InternalMessage $message): array
     {
         $role = match ($message->role) {
-            Role::User => 'user',
+            Role::User      => 'user',
             Role::Assistant => 'model',
-            Role::Tool => 'user',
-            default => 'user',
+            Role::Tool      => 'user',
+            default         => 'user',
         };
 
-        // Function response (tool result)
+        // Tool result
         if ($message->role === Role::Tool) {
             return [
-                'role' => 'user',
-                'parts' => [
-                    [
-                        'functionResponse' => [
-                            'name' => $message->name ?? '',
-                            'response' => ['result' => $message->content ?? ''],
-                        ],
+                'role'  => 'user',
+                'parts' => [[
+                    'functionResponse' => [
+                        'name'     => $message->name ?? '',
+                        'response' => ['result' => $message->content ?? ''],
                     ],
-                ],
+                ]],
             ];
         }
 
-        // Assistant with tool calls (function call parts)
+        // Assistant with tool calls
         if ($message->role === Role::Assistant && count($message->toolCalls) > 0) {
             $parts = [];
-
             if ($message->content !== null) {
                 $parts[] = ['text' => $message->content];
             }
-
             foreach ($message->toolCalls as $tc) {
-                $parts[] = [
-                    'functionCall' => [
-                        'name' => $tc->name,
-                        'args' => $tc->arguments,
-                    ],
-                ];
+                $parts[] = ['functionCall' => ['name' => $tc->name, 'args' => $tc->arguments]];
             }
-
             return ['role' => 'model', 'parts' => $parts];
         }
 
-        return [
-            'role' => $role,
-            'parts' => [['text' => $message->content ?? '']],
-        ];
+        // Multimodal user message (ContentPart[])
+        if ($message->isMultimodal()) {
+            $parts = array_map(function (ContentPart $part): array {
+                return match ($part->type) {
+                    ContentPartType::Text => ['text' => $part->value],
+                    ContentPartType::ImageUrl => [
+                        // Gemini supports fileData for URLs via File API; inline is base64 only
+                        'fileData' => ['fileUri' => $part->value, 'mimeType' => 'image/jpeg'],
+                    ],
+                    ContentPartType::ImageBase64 => [
+                        'inlineData' => [
+                            'mimeType' => $part->mimeType ?? 'image/jpeg',
+                            'data'     => $part->value,
+                        ],
+                    ],
+                };
+            }, $message->content);
+
+            return ['role' => $role, 'parts' => $parts];
+        }
+
+        return ['role' => $role, 'parts' => [['text' => $message->content ?? '']]];
     }
 
     /**

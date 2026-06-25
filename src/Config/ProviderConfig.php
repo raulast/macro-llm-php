@@ -11,8 +11,9 @@ final class ProviderConfig
         public readonly ?string $apiKey,
         public readonly string $defaultModel,
         public readonly ?string $baseUrl = null,
-        public readonly int $timeout = 30,
-        public readonly int $retries = 0,
+        public readonly ?int $timeout = null,
+        public readonly ?int $retries = null,
         public readonly array $extraHeaders = [],
+        public readonly ?int $retryDelayMs = null,
     ) {}
 }

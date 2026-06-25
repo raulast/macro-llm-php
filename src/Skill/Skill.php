@@ -43,9 +43,16 @@ abstract class Skill implements SkillInterface
      *
      * @param array{name: string, system_prompt: string, tools?: string[], config?: array<string, mixed>} $data
      */
+    /**
+     * Hydrate from DB/JSON/array.
+     * Returns a GenericSkill when called directly on Skill; subclass types return new static().
+     *
+     * @param array{name: string, system_prompt: string, tools?: string[], config?: array<string, mixed>} $data
+     */
     public static function fromArray(array $data): static
     {
-        $skill = new static();
+        /** @var static $skill */
+        $skill = static::class === self::class ? new GenericSkill() : new static();
         $skill->name = $data['name'];
         $skill->systemPrompt = $data['system_prompt'];
         $skill->tools = $data['tools'] ?? [];
@@ -59,6 +66,7 @@ abstract class Skill implements SkillInterface
 
     /**
      * Simple inline factory — does not require subclassing.
+     * Returns a GenericSkill when called directly on Skill.
      *
      * @param string[] $tools
      */
@@ -68,7 +76,8 @@ abstract class Skill implements SkillInterface
         array $tools = [],
         ?Config $config = null,
     ): static {
-        $skill = new static();
+        /** @var static $skill */
+        $skill = static::class === self::class ? new GenericSkill() : new static();
         $skill->name = $name;
         $skill->systemPrompt = $systemPrompt;
         $skill->tools = $tools;

@@ -12,15 +12,20 @@ final class ProviderFactory
 {
     /** @var array<string, class-string<ProviderInterface>> */
     private const PROVIDER_MAP = [
-        'openai' => OpenAIProvider::class,
-        'anthropic' => AnthropicProvider::class,
-        'gemini' => GeminiProvider::class,
-        'groq' => GroqProvider::class,
-        'openrouter' => OpenRouterProvider::class,
-        'ollama' => OllamaProvider::class,
-        'llamacpp' => LlamaCppProvider::class,
-        'opencode-zen-go' => OpenCodeZenGoProvider::class,
-        'opencode-zen-go-anthropic' => OpenCodeZenGoAnthropicProvider::class,
+        'openai'                     => OpenAIProvider::class,
+        'anthropic'                  => AnthropicProvider::class,
+        'gemini'                     => GeminiProvider::class,
+        'groq'                       => GroqProvider::class,
+        'openrouter'                 => OpenRouterProvider::class,
+        'ollama'                     => OllamaProvider::class,
+        'llamacpp'                   => LlamaCppProvider::class,
+        'opencode-zen-go'            => OpenCodeZenGoProvider::class,
+        'opencode-zen-go-anthropic'  => OpenCodeZenGoAnthropicProvider::class,
+        'azure'                      => AzureOpenAIProvider::class,
+        'mistral'                    => MistralProvider::class,
+        'deepseek'                   => DeepSeekProvider::class,
+        'xai'                        => XAIProvider::class,
+        'cohere'                     => CohereProvider::class,
     ];
 
     /**

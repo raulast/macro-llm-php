@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MacroLLM\Provider;
 
+use MacroLLM\Message\ContentPart;
+use MacroLLM\Message\ContentPartType;
 use MacroLLM\Message\FinishReason;
 use MacroLLM\Message\InternalMessage;
 use MacroLLM\Message\InternalRequest;
@@ -189,50 +191,68 @@ class AnthropicProvider extends AbstractProvider
     private function mapMessage(InternalMessage $message): array
     {
         $role = match ($message->role) {
-            Role::User => 'user',
+            Role::User      => 'user',
             Role::Assistant => 'assistant',
-            Role::Tool => 'user',
-            default => 'user',
+            Role::Tool      => 'user',
+            default         => 'user',
         };
 
-        // Tool result messages use the tool_result content block format
+        // Tool result
         if ($message->role === Role::Tool) {
             return [
-                'role' => 'user',
-                'content' => [
-                    [
-                        'type' => 'tool_result',
-                        'tool_use_id' => $message->toolCallId,
-                        'content' => $message->content ?? '',
-                    ],
-                ],
+                'role'    => 'user',
+                'content' => [[
+                    'type'        => 'tool_result',
+                    'tool_use_id' => $message->toolCallId,
+                    'content'     => $message->content ?? '',
+                ]],
             ];
         }
 
-        // Assistant messages with tool calls
+        // Assistant with tool calls
         if ($message->role === Role::Assistant && count($message->toolCalls) > 0) {
             $content = [];
-
             if ($message->content !== null) {
                 $content[] = ['type' => 'text', 'text' => $message->content];
             }
-
             foreach ($message->toolCalls as $tc) {
                 $content[] = [
-                    'type' => 'tool_use',
-                    'id' => $tc->id,
-                    'name' => $tc->name,
+                    'type'  => 'tool_use',
+                    'id'    => $tc->id,
+                    'name'  => $tc->name,
                     'input' => $tc->arguments,
                 ];
             }
-
             return ['role' => 'assistant', 'content' => $content];
         }
 
-        return [
-            'role' => $role,
-            'content' => $message->content ?? '',
-        ];
+        // Multimodal user message (ContentPart[])
+        if ($message->isMultimodal()) {
+            $content = array_map(function (ContentPart $part): array {
+                return match ($part->type) {
+                    ContentPartType::Text => [
+                        'type' => 'text',
+                        'text' => $part->value,
+                    ],
+                    ContentPartType::ImageUrl => [
+                        'type'   => 'image',
+                        'source' => ['type' => 'url', 'url' => $part->value],
+                    ],
+                    ContentPartType::ImageBase64 => [
+                        'type'   => 'image',
+                        'source' => [
+                            'type'       => 'base64',
+                            'media_type' => $part->mimeType ?? 'image/jpeg',
+                            'data'       => $part->value,
+                        ],
+                    ],
+                };
+            }, $message->content);
+
+            return ['role' => $role, 'content' => $content];
+        }
+
+        return ['role' => $role, 'content' => $message->content ?? ''];
     }
 
     /**

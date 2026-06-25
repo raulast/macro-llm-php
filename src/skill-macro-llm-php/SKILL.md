@@ -3,13 +3,15 @@
 ## Purpose
 
 `macro-llm-php` is a provider-agnostic AI client Composer package for PHP 8.1+.
-It extends Laravel's HTTP client (`Illuminate\Http\Client\PendingRequest`) via PHP macros,
-exposing a unified interface (`InternalRequest` / `InternalResponse`) across 9 AI providers.
+It uses a thin Guzzle HTTP layer (no `illuminate/http` required in core) for all provider communication,
+exposing a unified interface (`InternalRequest` / `InternalResponse`) across **14 AI providers**.
 It ships a full agentic stack: Skills, Agents, multi-agent Orchestration, MCP client, and MCP server.
+Supports vision/multimodal messages, structured output (JSON Schema), and persistent conversation memory.
 
 **Namespace root**: `MacroLLM\`
 **Package name**: `raulast/macro-llm-php`
 **Entry point**: `MacroLLM\MacroLLM`
+**HTTP layer**: `MacroLLM\Http\HttpClient` (Guzzle wrapper — `illuminate/http` only needed for Laravel macros)
 
 ## Installation
 
@@ -29,45 +31,59 @@ php artisan vendor:publish --tag=macro-llm-config
 | `MacroLLM` | `MacroLLM` | Main entry point |
 | `InternalRequest` | `MacroLLM\Message` | Provider-agnostic request |
 | `InternalResponse` | `MacroLLM\Message` | Provider-agnostic response |
-| `InternalMessage` | `MacroLLM\Message` | Single conversation turn |
+| `InternalMessage` | `MacroLLM\Message` | Single conversation turn (text or `ContentPart[]` for multimodal) |
 | `StreamChunk` | `MacroLLM\Message` | Streaming delta |
 | `Usage` | `MacroLLM\Message` | Token usage metadata |
 | `Role` (enum) | `MacroLLM\Message` | system\|user\|assistant\|tool |
 | `FinishReason` (enum) | `MacroLLM\Message` | Stop\|ToolCalls\|Length\|ContentFilter |
+| `ContentPart` | `MacroLLM\Message` | Single part within a multimodal message |
+| `ContentPartType` (enum) | `MacroLLM\Message` | Text\|ImageUrl\|ImageBase64 |
+| `ResponseFormat` | `MacroLLM\Message` | Structured output — JSON or JSON Schema enforcement |
 | `ToolDefinition` | `MacroLLM\Tool` | Tool name+schema+callable |
 | `ToolCall` | `MacroLLM\Tool` | Model-issued tool invocation |
 | `ToolResult` | `MacroLLM\Tool` | Tool execution output |
 | `Config` | `MacroLLM\Config` | Package configuration |
-| `ProviderConfig` | `MacroLLM\Config` | Per-provider settings |
+| `ProviderConfig` | `MacroLLM\Config` | Per-provider settings (`timeout`/`retries` are `?int`) |
 | `Skill` (abstract) | `MacroLLM\Skill` | Reusable prompt+tools bundle |
+| `GenericSkill` | `MacroLLM\Skill` | Concrete Skill for inline/DB hydration |
 | `AgentConfig` | `MacroLLM\Agent` | Agent configuration |
 | `AgentStep` | `MacroLLM\Agent` | Value object for a single loop event |
 | `AgentStepType` (enum) | `MacroLLM\Agent` | LlmResponse\|ToolCall\|ToolResult\|FinalResponse |
 | `Agent` | `MacroLLM\Agent` | Autonomous tool-call loop |
 | `NullMemory` | `MacroLLM\Agent\Memory` | Stateless memory (default) |
 | `InMemoryMemory` | `MacroLLM\Agent\Memory` | Stateful in-process memory |
+| `SqliteMemory` | `MacroLLM\Agent\Memory` | SQLite-backed persistent memory (PDO, no extra deps) |
+| `RedisMemory` | `MacroLLM\Agent\Memory` | Redis-backed memory (phpredis or Predis) |
+| `FileMemory` | `MacroLLM\Agent\Memory` | File-backed memory (JSON on disk) |
 | `Orchestrator` | `MacroLLM\Orchestration` | Multi-agent coordinator |
 | `OrchestratorResult` | `MacroLLM\Orchestration` | Aggregated agent outcomes |
 | `AgentOutcome` | `MacroLLM\Orchestration` | Single agent result |
-| `RoutingStrategy` (enum) | `MacroLLM\Orchestration` | Sequential\|Parallel (Conditional declared, not yet implemented) |
+| `ConditionalRoute` | `MacroLLM\Orchestration` | Agent + condition pair for conditional routing |
+| `RoutingStrategy` (enum) | `MacroLLM\Orchestration` | Sequential\|Parallel\|Conditional |
 | `ErrorStrategy` (enum) | `MacroLLM\Orchestration` | Stop\|Continue |
 | `MCPClient` | `MacroLLM\Mcp` | MCP server consumer |
 | `MCPServer` | `MacroLLM\Mcp` | MCP server implementation |
 | `MCPServerMiddleware` | `MacroLLM\Mcp` | PSR-15 MCP middleware |
+| `HttpClient` | `MacroLLM\Http` | Thin Guzzle wrapper (retry/backoff built-in) |
 
 ## Providers
 
 | Name | getModels() | Auth | Base URL | Notes |
 |---|---|---|---|---|
-| `openai` | GET /v1/models | `Authorization: Bearer {key}` | api.openai.com/v1 | OpenAI-compat base |
-| `anthropic` | GET /models (fallback: static) | `x-api-key: {key}` + `anthropic-version: 2023-06-01` | api.anthropic.com/v1 | Native Anthropic protocol |
-| `gemini` | GET /models (fallback: static) | `x-goog-api-key: {key}` | generativelanguage.googleapis.com/v1beta | Strips "models/" prefix |
-| `groq` | GET /models (inherited) | `Authorization: Bearer {key}` | api.groq.com/openai/v1 | Inherits from OpenAI-compat |
-| `openrouter` | GET /models (inherited) | `Authorization: Bearer {key}` | openrouter.ai/api/v1 | Dynamic catalog; OpenAI-compat |
-| `ollama` | GET /v1/models (inherited) | optional | localhost:11434/v1 (configurable) | Locally installed models |
-| `llamacpp` | GET /v1/models (inherited) | none | localhost:8080/v1 (configurable) | Single loaded model |
-| `opencode-zen-go` | GET /zen/go/v1/models | `Authorization: Bearer {key}` | opencode.ai | OpenAI-compat; GLM, Kimi, DeepSeek, MiMo |
-| `opencode-zen-go-anthropic` | GET /zen/go/v1/models (fallback: static) | `x-api-key: {key}` + anthropic-version | opencode.ai | Anthropic-compat; MiniMax, Qwen |
+| `openai` | GET /v1/models | Bearer | api.openai.com/v1 | OpenAI-compat base |
+| `anthropic` | GET /models (fallback: static) | x-api-key | api.anthropic.com/v1 | Native Anthropic |
+| `gemini` | GET /models (fallback: static) | x-goog-api-key | generativelanguage.googleapis.com/v1beta | |
+| `groq` | GET /models | Bearer | api.groq.com/openai/v1 | OpenAI-compat |
+| `openrouter` | GET /models | Bearer | openrouter.ai/api/v1 | OpenAI-compat |
+| `ollama` | GET /v1/models | optional | localhost:11434/v1 | Local inference |
+| `llamacpp` | GET /v1/models | none | localhost:8080/v1 | Local inference |
+| `opencode-zen-go` | GET /zen/go/v1/models | Bearer | opencode.ai | GLM, Kimi, DeepSeek, MiMo |
+| `opencode-zen-go-anthropic` | GET /zen/go/v1/models (fallback: static) | x-api-key | opencode.ai | MiniMax, Qwen |
+| `azure` | — (empty) | api-key header | {resource}.openai.azure.com/openai/deployments/{deployment} | Resource/deployment/version via `extra_headers` |
+| `mistral` | GET /models | Bearer | api.mistral.ai/v1 | OpenAI-compat |
+| `deepseek` | static | Bearer | api.deepseek.com/v1 | OpenAI-compat |
+| `xai` | GET /models | Bearer | api.x.ai/v1 | OpenAI-compat |
+| `cohere` | GET /models?endpoint=chat | Bearer | api.cohere.com/v2 | Native /v2/chat |
 
 ## Recipes
 
@@ -281,15 +297,127 @@ $response = $agent->run('What is the weather in Paris?');
 ```php
 use MacroLLM\Agent\AgentConfig;
 use MacroLLM\Agent\Memory\InMemoryMemory;
+use MacroLLM\Agent\Memory\SqliteMemory;
+use MacroLLM\Agent\Memory\RedisMemory;
+use MacroLLM\Agent\Memory\FileMemory;
 
+// In-process (lost on restart)
 $agent = $llm->agent(new AgentConfig(
     provider: 'openai',
-    memory:   new InMemoryMemory(), // persists history across run() calls
+    memory:   new InMemoryMemory(),
+));
+
+// Persistent — SQLite (no extra dependencies, uses PHP PDO)
+$agent = $llm->agent(new AgentConfig(
+    provider: 'openai',
+    memory:   new SqliteMemory('/var/data/conversations.db', 'user-123'),
+));
+
+// Persistent — Redis
+$agent = $llm->agent(new AgentConfig(
+    provider: 'openai',
+    memory:   new RedisMemory($redisClient, 'user-123', ttl: 3600),
+));
+
+// Persistent — File
+$agent = $llm->agent(new AgentConfig(
+    provider: 'openai',
+    memory:   new FileMemory('/tmp/conv-user-123.json'),
 ));
 
 $agent->run('My name is Ana and I love PHP.');
 $response = $agent->run('What do you know about me?');
 echo $response->content; // "Your name is Ana and you love PHP."
+```
+
+### Recipe 11.5: Vision / Multimodal
+
+```php
+use MacroLLM\Message\InternalMessage;
+use MacroLLM\Message\ContentPart;
+
+// Convenience factory — base64 by default (works with all providers)
+$response = $llm->chat(new InternalRequest([
+    InternalMessage::userWithImage('What is in this image?', '/path/to/photo.jpg'),
+]));
+
+// From URL — fetches and converts to base64 automatically
+$response = $llm->chat(new InternalRequest([
+    InternalMessage::userWithImage('Describe this', 'https://example.com/img.jpg'),
+]));
+
+// Send as URL (only for providers that support it — pass asUrl: true explicitly)
+$response = $llm->chat(new InternalRequest([
+    InternalMessage::userWithImage('Describe this', 'https://storage.googleapis.com/...', asUrl: true),
+]));
+
+// Full control via ContentPart
+$response = $llm->chat(new InternalRequest([
+    InternalMessage::userWithParts(
+        ContentPart::text('Compare these two images:'),
+        ContentPart::imageBase64($base64data, 'image/png'),
+        ContentPart::imageBase64($base64data2, 'image/jpeg'),
+    ),
+]));
+```
+
+**Provider support:**
+- `openai`, `anthropic`, `gemini`, `groq` — support `imageBase64`
+- `imageUrl` — only works with providers that allow URL fetching (generally avoid; use base64)
+
+### Recipe 11.6: Structured Output (JSON Schema)
+
+```php
+use MacroLLM\Message\ResponseFormat;
+
+$request = new InternalRequest(
+    messages: [InternalMessage::user('Extract: name and age from "Ana is 28 years old"')],
+    responseFormat: ResponseFormat::jsonSchema('person', [
+        'type'       => 'object',
+        'properties' => [
+            'name' => ['type' => 'string'],
+            'age'  => ['type' => 'integer'],
+        ],
+        'required'   => ['name', 'age'],
+    ]),
+);
+
+$response = $llm->chat($request, 'openai');
+$data = json_decode($response->content, true);
+// ['name' => 'Ana', 'age' => 28]
+```
+
+**Note:** `ResponseFormat` is applied by OpenAI-compatible providers. Anthropic and Gemini ignore it silently — instruct via system prompt instead.
+
+### Recipe 11.7: Conditional Orchestration
+
+```php
+use MacroLLM\Orchestration\Orchestrator;
+use MacroLLM\Orchestration\AgentOutcome;
+
+$orchestrator = new Orchestrator();
+
+// Always runs (no condition)
+$orchestrator->addAgent('classifier', $llm->agent(new AgentConfig(
+    provider:     'openai',
+    systemPrompt: 'Classify the input as "technical" or "general". Reply with one word only.',
+)));
+
+// Only runs if previous agent said "technical"
+$orchestrator->addConditionalAgent(
+    'technical-responder',
+    $llm->agent(new AgentConfig(provider: 'openai', systemPrompt: 'You are a senior PHP engineer.')),
+    fn(?AgentOutcome $prev) => $prev !== null && str_contains(strtolower($prev->response?->content ?? ''), 'technical'),
+);
+
+// Only runs if previous agent said "general"
+$orchestrator->addConditionalAgent(
+    'general-responder',
+    $llm->agent(new AgentConfig(provider: 'openai', systemPrompt: 'You are a friendly assistant.')),
+    fn(?AgentOutcome $prev) => $prev !== null && str_contains(strtolower($prev->response?->content ?? ''), 'general'),
+);
+
+$result = $orchestrator->dispatch('How do PHP fibers work?');
 ```
 
 ### Recipe 12: Multi-Agent Orchestration — Sequential
@@ -499,16 +627,18 @@ $models = $llm->models('opencode-zen-go-anthropic');
 Config::fromArray([
     'default_provider'    => 'openai',  // used when no provider specified
     'timeout'             => 30,         // global timeout seconds (1–300)
-    'retries'             => 0,          // retry count (0–10)
+    'retries'             => 0,          // retry count (0–10); per-provider override via ProviderConfig
+    'retry_delay_ms'      => 500,        // base delay ms for exponential backoff (500→1000→2000→...)
     'max_tool_iterations' => 10,         // agent loop max
     'providers' => [
         'openai' => [
-            'api_key'       => '${OPENAI_API_KEY}', // ${VAR} resolved lazily from env
-            'default_model' => 'gpt-4o',
-            'base_url'      => null,     // override for Azure OpenAI
-            'timeout'       => 30,
-            'retries'       => 0,
-            'extra_headers' => [],
+            'api_key'        => '${OPENAI_API_KEY}', // ${VAR} resolved lazily from env
+            'default_model'  => 'gpt-4o',
+            'base_url'       => null,     // override for Azure OpenAI
+            'timeout'        => null,     // ?int — null = use global timeout
+            'retries'        => null,     // ?int — null = use global retries
+            'retry_delay_ms' => null,     // ?int — null = use global retry_delay_ms
+            'extra_headers'  => [],
         ],
         'ollama' => [
             'api_key'       => null,     // optional for local providers
@@ -607,9 +737,8 @@ try {
 - `NullMemory` is the default memory — agents are stateless unless `InMemoryMemory` is explicitly set.
 - All package exceptions extend `MacroLLMException` — catch-all with a single `catch (MacroLLMException)`.
 - **`Usage` token fields**: `promptTokens`, `completionTokens`, `totalTokens` — there is NO `inputTokens` or `outputTokens`.
-- **`Skill` is abstract** — to hydrate from DB/array in application code, extend it first: `final class DynamicSkill extends Skill {}`, then call `DynamicSkill::fromArray($data)`.
-- **`ProviderConfig`** has no `fromArray()` — instantiate directly: `new ProviderConfig(apiKey: ..., defaultModel: ..., baseUrl: ..., ...)`.
-- `illuminate/http` and `illuminate/support` constraints must include `^12.0|^13.0` for Laravel 13 compatibility.
-- **`MacroLLM::standalone()`** auto-bootstraps the `Http` Facade via `Facade::getFacadeApplication() === null` + `Http::swap(new Factory())`. No manual setup needed outside Laravel.
-- **`MacroLLMSlimExtension`** applies the same Http Facade bootstrap. Requires a PSR-11 container with `set()` — use PHP-DI (`php-di/php-di`). Slim's built-in container does NOT have `set()`.
+- **`Skill` is abstract** — `Skill::fromArray()` and `Skill::create()` return a `GenericSkill` instance when called directly on `Skill`. Subclasses continue to return `new static()`. No need to create a concrete subclass just for hydration.
+- **`illuminate/http` is NOT required** for standalone or Slim usage. It is listed under `suggest` in `composer.json`. Laravel users already have it installed; the `MacroLLMServiceProvider` registers macros in `boot()`.
+- **HTTP retry/backoff**: `Config` accepts `retries` (int, default 0) and `retry_delay_ms` (int, default 500ms). `HttpClient` retries on connect failure and HTTP 429/500/502/503 with exponential backoff (`delay * 2^attempt`). Per-provider override via `ProviderConfig::$retries` and `$retryDelayMs` (both `?int` — null = use global).
+- **`ProviderConfig::$timeout` and `$retries` are `?int`** — `null` means "not overridden, use global Config value". This fixes the previous sentinel anti-pattern.
 - The `config/macro-llm.php` in Slim integration is created by the user in their project — it is NOT auto-published (unlike Laravel's `vendor:publish`).

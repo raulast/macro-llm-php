@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MacroLLM\Provider;
 
+use MacroLLM\Message\ContentPart;
+use MacroLLM\Message\ContentPartType;
 use MacroLLM\Message\FinishReason;
 use MacroLLM\Message\InternalMessage;
 use MacroLLM\Message\InternalRequest;
@@ -38,7 +40,7 @@ class OpenAICompatibleProvider extends AbstractProvider
     public function toPayload(InternalRequest $request): array
     {
         $payload = [
-            'model' => $this->mapModel($this->config->defaultModel),
+            'model'    => $this->mapModel($this->config->defaultModel),
             'messages' => $this->mapMessages($request->messages),
         ];
 
@@ -48,6 +50,23 @@ class OpenAICompatibleProvider extends AbstractProvider
 
         if (count($request->tools) > 0) {
             $payload['tools'] = $this->mapTools($request->tools);
+        }
+
+        // F-10: Structured output / response format
+        if ($request->responseFormat !== null) {
+            $fmt = $request->responseFormat;
+            if ($fmt->type === 'json_schema' && $fmt->name !== null && $fmt->schema !== null) {
+                $payload['response_format'] = [
+                    'type'        => 'json_schema',
+                    'json_schema' => [
+                        'name'   => $fmt->name,
+                        'schema' => $fmt->schema,
+                        'strict' => $fmt->strict,
+                    ],
+                ];
+            } else {
+                $payload['response_format'] = ['type' => $fmt->type];
+            }
         }
 
         return $payload;
@@ -170,6 +189,32 @@ class OpenAICompatibleProvider extends AbstractProvider
             'role' => $message->role->value,
         ];
 
+        // Multimodal content (ContentPart[])
+        if ($message->isMultimodal()) {
+            $result['content'] = array_map(
+                fn(ContentPart $part) => match ($part->type) {
+                    ContentPartType::Text => [
+                        'type' => 'text',
+                        'text' => $part->value,
+                    ],
+                    ContentPartType::ImageUrl => [
+                        'type'      => 'image_url',
+                        'image_url' => ['url' => $part->value, 'detail' => $part->detail],
+                    ],
+                    ContentPartType::ImageBase64 => [
+                        'type'      => 'image_url',
+                        'image_url' => [
+                            'url'    => 'data:' . $part->mimeType . ';base64,' . $part->value,
+                            'detail' => $part->detail,
+                        ],
+                    ],
+                },
+                $message->content,
+            );
+
+            return $result;
+        }
+
         if ($message->content !== null) {
             $result['content'] = $message->content;
         }
@@ -178,10 +223,10 @@ class OpenAICompatibleProvider extends AbstractProvider
         if ($message->role === Role::Assistant && count($message->toolCalls) > 0) {
             $result['tool_calls'] = array_map(
                 fn(ToolCall $tc) => [
-                    'id' => $tc->id,
-                    'type' => 'function',
+                    'id'       => $tc->id,
+                    'type'     => 'function',
                     'function' => [
-                        'name' => $tc->name,
+                        'name'      => $tc->name,
                         'arguments' => json_encode($tc->arguments),
                     ],
                 ],

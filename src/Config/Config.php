@@ -12,6 +12,7 @@ final class Config
         private ?string $defaultProvider = null,
         private int $timeout = 30,
         private int $retries = 0,
+        private int $retryDelayMs = 500,
         private int $maxToolIterations = 10,
     ) {}
 
@@ -35,16 +36,16 @@ final class Config
         return $this->retries;
     }
 
+    public function retryDelayMs(): int
+    {
+        return $this->retryDelayMs;
+    }
+
     public function maxToolIterations(): int
     {
         return $this->maxToolIterations;
     }
 
-    /**
-     * Resolves ${ENV_VAR} patterns from $_ENV / getenv() at access time.
-     *
-     * Supports dotted keys for nested access: 'providers.openai.api_key'
-     */
     public function get(string $key): mixed
     {
         $value = $this->resolveKey($key);
@@ -56,7 +57,10 @@ final class Config
         return $value;
     }
 
-    /** Per-request override merge — override values win. */
+    /**
+     * Per-request override merge — only non-null override values win.
+     * Fixes the sentinel anti-pattern: null = "not set", not "default value".
+     */
     public function mergedWith(?self $override): self
     {
         if ($override === null) {
@@ -68,6 +72,7 @@ final class Config
             defaultProvider: $override->defaultProvider ?? $this->defaultProvider,
             timeout: $override->timeout !== 30 ? $override->timeout : $this->timeout,
             retries: $override->retries !== 0 ? $override->retries : $this->retries,
+            retryDelayMs: $override->retryDelayMs !== 500 ? $override->retryDelayMs : $this->retryDelayMs,
             maxToolIterations: $override->maxToolIterations !== 10 ? $override->maxToolIterations : $this->maxToolIterations,
         );
     }
@@ -81,9 +86,10 @@ final class Config
                 apiKey: $config['api_key'] ?? null,
                 defaultModel: $config['default_model'] ?? 'default',
                 baseUrl: $config['base_url'] ?? null,
-                timeout: $config['timeout'] ?? 30,
-                retries: $config['retries'] ?? 0,
+                timeout: isset($config['timeout']) ? (int) $config['timeout'] : null,
+                retries: isset($config['retries']) ? (int) $config['retries'] : null,
                 extraHeaders: $config['extra_headers'] ?? [],
+                retryDelayMs: isset($config['retry_delay_ms']) ? (int) $config['retry_delay_ms'] : null,
             );
         }
 
@@ -92,19 +98,18 @@ final class Config
             defaultProvider: $data['default_provider'] ?? null,
             timeout: $data['timeout'] ?? 30,
             retries: $data['retries'] ?? 0,
+            retryDelayMs: $data['retry_delay_ms'] ?? 500,
             maxToolIterations: $data['max_tool_iterations'] ?? 10,
         );
     }
 
-    /**
-     * Resolves a dotted key path against the config data.
-     */
     private function resolveKey(string $key): mixed
     {
         $map = [
-            'default_provider' => $this->defaultProvider,
-            'timeout' => $this->timeout,
-            'retries' => $this->retries,
+            'default_provider'    => $this->defaultProvider,
+            'timeout'             => $this->timeout,
+            'retries'             => $this->retries,
+            'retry_delay_ms'      => $this->retryDelayMs,
             'max_tool_iterations' => $this->maxToolIterations,
         ];
 
@@ -112,7 +117,6 @@ final class Config
             return $map[$key];
         }
 
-        // Handle dotted provider access: providers.{name}.{field}
         if (str_starts_with($key, 'providers.')) {
             $parts = explode('.', $key, 3);
 
@@ -132,27 +136,26 @@ final class Config
             }
 
             return match ($parts[2]) {
-                'api_key' => $provider->apiKey,
-                'default_model' => $provider->defaultModel,
-                'base_url' => $provider->baseUrl,
-                'timeout' => $provider->timeout,
-                'retries' => $provider->retries,
-                'extra_headers' => $provider->extraHeaders,
-                default => null,
+                'api_key'        => $provider->apiKey,
+                'default_model'  => $provider->defaultModel,
+                'base_url'       => $provider->baseUrl,
+                'timeout'        => $provider->timeout,
+                'retries'        => $provider->retries,
+                'extra_headers'  => $provider->extraHeaders,
+                'retry_delay_ms' => $provider->retryDelayMs,
+                default          => null,
             };
         }
 
         return null;
     }
 
-    /** Resolves ${ENV_VAR_NAME} patterns via $_ENV or getenv(). */
     private function resolveEnvVars(string $value): string
     {
         return (string) preg_replace_callback(
             '/\$\{([A-Z0-9_]+)\}/',
             static function (array $matches): string {
                 $varName = $matches[1];
-
                 return $_ENV[$varName]
                     ?? (getenv($varName) !== false ? getenv($varName) : $matches[0]);
             },

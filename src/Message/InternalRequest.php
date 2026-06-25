@@ -18,6 +18,7 @@ final class InternalRequest
         public readonly array $tools = [],
         public readonly ?Config $configOverride = null,
         public readonly bool $stream = false,
+        public readonly ?ResponseFormat $responseFormat = null,
     ) {}
 
     /** @param InternalMessage[] $messages */
@@ -28,6 +29,7 @@ final class InternalRequest
             tools: $this->tools,
             configOverride: $this->configOverride,
             stream: $this->stream,
+            responseFormat: $this->responseFormat,
         );
     }
 
@@ -38,6 +40,7 @@ final class InternalRequest
             tools: $this->tools,
             configOverride: $this->configOverride,
             stream: $this->stream,
+            responseFormat: $this->responseFormat,
         );
     }
 }

@@ -3,26 +3,33 @@
 Provider-agnostic AI client for Laravel, Slim 4, and standalone PHP.
 
 [![PHP Version](https://img.shields.io/packagist/php-v/raulast/macro-llm-php)](https://packagist.org/packages/raulast/macro-llm-php)
-[![Laravel](https://img.shields.io/badge/Laravel-10.x%20%7C%2011.x-red)](https://laravel.com)
+[![Laravel](https://img.shields.io/badge/Laravel-10.x%20%7C%2011.x%20%7C%2012.x%20%7C%2013.x-red)](https://laravel.com)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Packagist](https://img.shields.io/packagist/v/raulast/macro-llm-php)](https://packagist.org/packages/raulast/macro-llm-php)
 
 ## Overview
 
-MacroLLM extends Laravel's HTTP client (`PendingRequest`) through PHP macros, giving you a unified interface to interact with any AI provider. Call `Http::openai(...)`, `Http::anthropic(...)`, or `Http::gemini(...)` with the same request format — swap providers by changing a single string.
+MacroLLM provides a unified interface to interact with any AI provider from any PHP 8.1+ application. Call `$llm->chat(...)` with the same request format regardless of which provider is behind the call — swap providers by changing a single string.
 
-Internally, every request and response flows through a normalized format (`InternalRequest` / `InternalResponse`). Providers implement bidirectional normalization: your application code stays the same regardless of which provider is behind the call. This decouples business logic from vendor-specific APIs and makes provider migration a configuration change, not a rewrite.
+Internally, every request and response flows through a normalized format (`InternalRequest` / `InternalResponse`). Providers implement bidirectional normalization: your application code stays the same. This decouples business logic from vendor-specific APIs and makes provider migration a configuration change, not a rewrite.
+
+The HTTP layer is a thin Guzzle wrapper (`HttpClient`) — `illuminate/http` is only pulled in for Laravel macro registration, not for core HTTP operations. Standalone and Slim users get zero Laravel overhead.
 
 On top of the provider layer, MacroLLM provides a full agentic stack: **Skills** (reusable system-prompt + tool bundles), **Agents** (automatic tool-call loops with configurable memory), and **Orchestration** (sequential or parallel multi-agent workflows). Combined with built-in MCP client/server support, you can build complex AI-powered systems while keeping each piece testable and swappable.
 
 ## Features
 
-- 9 built-in providers: OpenAI, Anthropic, Gemini, Groq, OpenRouter, Ollama, llama.cpp, OpenCode Zen Go, OpenCode Zen Go (Anthropic)
+- 14 built-in providers: OpenAI, Anthropic, Gemini, Groq, OpenRouter, Ollama, llama.cpp, OpenCode Zen Go, OpenCode Zen Go (Anthropic), Azure OpenAI, Mistral, DeepSeek, xAI, Cohere
 - Unified `InternalRequest` / `InternalResponse` format with bidirectional normalization
+- Thin Guzzle HTTP layer — no `illuminate/http` required outside Laravel
+- Retry/backoff exponential configurable per provider (`retries`, `retry_delay_ms`)
+- Vision/multimodal messages — `InternalMessage::userWithImage()` (base64 by default) and `ContentPart[]`
+- Structured output via `ResponseFormat::jsonSchema()` (OpenAI-compatible providers)
 - Automatic tool-call loop via `Agent`
-- Reusable Skills (system prompt + tools + config — composable, subclassable, DB-hydratable via `fromArray`)
-- Parametrizable conversation memory (`NullMemory` stateless default, `InMemoryMemory`, extensible)
-- Multi-agent Orchestration (sequential and parallel via Guzzle concurrent requests)
+- Reusable Skills (system prompt + tools + config — composable, subclassable, DB-hydratable via `Skill::fromArray()`)
+- `GenericSkill` concrete class for inline and DB-hydrated skills (no subclassing needed)
+- Parametrizable conversation memory (`NullMemory`, `InMemoryMemory`, `SqliteMemory`, `RedisMemory`, `FileMemory`)
+- Multi-agent Orchestration (sequential, parallel, and conditional routing)
 - MCP Client — discover and use tools from any MCP server
 - MCP Server — expose your tools as a PSR-15 middleware endpoint
 - Laravel integration (ServiceProvider, Facade, auto-discovery, `vendor:publish`)
@@ -43,6 +50,11 @@ On top of the provider layer, MacroLLM provides a full agentic stack: **Skills**
 | llamacpp | OpenAI-compatible | None | `localhost:8080/v1` | Local inference |
 | opencode-zen-go | OpenAI-compatible | Bearer API key | `opencode.ai` | GLM, Kimi, DeepSeek, MiMo; API key from [opencode.ai](https://opencode.ai) Zen console |
 | opencode-zen-go-anthropic | Anthropic-compatible | x-api-key header | `opencode.ai` | MiniMax, Qwen; same API key as opencode-zen-go |
+| azure | OpenAI-compatible | api-key header | `{resource}.openai.azure.com/openai/deployments/{deployment}` | Resource/deployment/version via `extra_headers` |
+| mistral | OpenAI-compatible | Bearer API key | `api.mistral.ai/v1` | |
+| deepseek | OpenAI-compatible | Bearer API key | `api.deepseek.com/v1` | Static model list |
+| xai | OpenAI-compatible | Bearer API key | `api.x.ai/v1` | |
+| cohere | Native | Bearer API key | `api.cohere.com/v2` | Native /v2/chat; streaming SSE |
 
 ## Requirements
 
@@ -69,12 +81,13 @@ The config file (`config/macro-llm.php`) defines:
 |---|---|---|
 | `default_provider` | Provider used when none is specified | `ollama` |
 | `timeout` | Global request timeout in seconds | `30` |
-| `retries` | Automatic retries on failure | `0` |
+| `retries` | Automatic retries on failure (exponential backoff) | `0` |
+| `retry_delay_ms` | Base delay in ms for retry backoff (doubles each attempt) | `500` |
 | `max_tool_iterations` | Max agent tool-call loop iterations | `10` |
 | `providers` | Array of provider configurations | — |
 | `mcp_servers` | External MCP server connections | — |
 
-Each provider entry supports: `api_key`, `default_model`, `base_url`, `timeout`, `retries`, `extra_headers`.
+Each provider entry supports: `api_key`, `default_model`, `base_url`, `timeout`, `retries`, `retry_delay_ms`, `extra_headers`. All numeric fields are `?int` — `null` means "use global value".
 
 API keys support environment variable patterns (`'${ENV_VAR}'`) resolved lazily at access time.
 
@@ -209,7 +222,7 @@ echo $response->content;
 ```php
 use MacroLLM\Skill\Skill;
 
-// Inline skill
+// Inline skill — returns a GenericSkill (no subclassing needed)
 $translatorSkill = Skill::create(
     name: 'translator',
     systemPrompt: 'You are a professional translator. Always respond in the target language.',
@@ -218,7 +231,7 @@ $translatorSkill = Skill::create(
 
 $llm->skills()->register($translatorSkill);
 
-// From DB record
+// From DB record — also returns a GenericSkill
 $skillData = $db->find('skills', 1);
 $skill = Skill::fromArray($skillData);
 $llm->skills()->register($skill);
@@ -234,7 +247,38 @@ class SupportSkill extends Skill
 }
 ```
 
-### Agent Step Callback
+### Vision/Multimodal
+
+```php
+use MacroLLM\Message\InternalMessage;
+
+// Simplest — base64 by default (works with all vision-capable providers)
+$response = $llm->chat(new InternalRequest([
+    InternalMessage::userWithImage('What is in this image?', '/path/to/photo.jpg'),
+]));
+
+// From URL — auto-fetched and encoded to base64
+$response = $llm->chat(new InternalRequest([
+    InternalMessage::userWithImage('Describe this', 'https://example.com/img.jpg'),
+]));
+```
+
+### Structured Output
+
+```php
+use MacroLLM\Message\ResponseFormat;
+
+$response = $llm->chat(new InternalRequest(
+    messages: [InternalMessage::user('Extract: name and age from "Ana is 28 years old"')],
+    responseFormat: ResponseFormat::jsonSchema('person', [
+        'type'       => 'object',
+        'properties' => ['name' => ['type' => 'string'], 'age' => ['type' => 'integer']],
+        'required'   => ['name', 'age'],
+    ]),
+), 'openai');
+
+$data = json_decode($response->content, true);
+```
 
 Observe each event in the agent's tool-call loop without modifying or extending `Agent`
 (which is `final`). Pass an `onStep` closure to `AgentConfig` — it receives an
@@ -278,10 +322,16 @@ Passing `null` (the default) has zero overhead on the hot path.
 ```php
 use MacroLLM\Agent\AgentConfig;
 use MacroLLM\Agent\Memory\InMemoryMemory;
+use MacroLLM\Agent\Memory\SqliteMemory;
+use MacroLLM\Agent\Memory\RedisMemory;
+use MacroLLM\Agent\Memory\FileMemory;
 
 $agent = $llm->agent(new AgentConfig(
     provider: 'anthropic',
-    memory: new InMemoryMemory(), // stateful — remembers across run() calls
+    memory: new InMemoryMemory(),       // in-process
+    // memory: new SqliteMemory('/var/data/conv.db', 'user-123'),  // persistent, no deps
+    // memory: new RedisMemory($redis, 'user-123', ttl: 3600),     // redis
+    // memory: new FileMemory('/tmp/conv-user-123.json'),          // file
 ));
 
 $agent->run('My name is Ana.');

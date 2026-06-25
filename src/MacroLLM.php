@@ -87,6 +87,8 @@ final class MacroLLM
             $providerInstance->baseUrl(),
             $providerInstance->headers(),
             $mergedConfig->timeout(),
+            $mergedConfig->retries(),
+            $mergedConfig->retryDelayMs(),
         ))->post($providerInstance->endpointPath(), $payload);
 
         return $providerInstance->toResponse($data);
@@ -130,6 +132,8 @@ final class MacroLLM
             $providerInstance->baseUrl(),
             $providerInstance->headers(),
             $mergedConfig->timeout(),
+            $mergedConfig->retries(),
+            $mergedConfig->retryDelayMs(),
         ))->stream($providerInstance->endpointPath(), $payload);
 
         $chunks = [];
