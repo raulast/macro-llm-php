@@ -66,6 +66,35 @@ php artisan vendor:publish --tag=macro-llm-config
 | `MCPServerMiddleware` | `MacroLLM\Mcp` | PSR-15 MCP middleware |
 | `HttpClient` | `MacroLLM\Http` | Thin Guzzle wrapper (retry/backoff built-in) |
 
+## Capacidades por provider
+
+| Provider | chat | embed | image | TTS | STT | rerank |
+|---|---|---|---|---|---|---|
+| openai | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| anthropic | ✅ | — | — | — | — | — |
+| gemini | ✅ | ✅ | ✅ | — | — | — |
+| groq | ✅ | — | — | — | ✅ | — |
+| openrouter | ✅ | ✅ | — | — | — | — |
+| ollama | ✅ | ✅ | — | — | — | — |
+| llamacpp | ✅ | ✅ | — | — | — | — |
+| mistral | ✅ | ✅ | — | — | ✅ | — |
+| deepseek | ✅ | — | — | — | — | — |
+| xai | ✅ | ✅ | ✅ | — | — | — |
+| azure | ✅ | ✅ | ✅ | — | — | — |
+| cohere | ✅ | ✅ | — | — | — | ✅ |
+| elevenlabs | — | — | — | ✅ | — | — |
+| opencode-zen-go | ✅ | — | — | — | — | — |
+| opencode-zen-go-anthropic | ✅ | — | — | — | — | — |
+
+Use `instanceof` to check capabilities at runtime:
+```php
+$provider = $llm->providers()->get('openai');
+
+if ($provider instanceof \MacroLLM\Contract\EmbeddingProviderInterface) {
+    $llm->embed(new EmbeddingRequest(['hello world']));
+}
+```
+
 ## Providers
 
 | Name | getModels() | Auth | Base URL | Notes |

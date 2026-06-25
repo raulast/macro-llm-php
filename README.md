@@ -39,6 +39,33 @@ On top of the provider layer, MacroLLM provides a full agentic stack: **Skills**
 
 ## Supported Providers
 
+| Provider | chat | embed | image | TTS | STT | rerank |
+|---|---|---|---|---|---|---|
+| openai | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| anthropic | ✅ | — | — | — | — | — |
+| gemini | ✅ | ✅ | ✅ | — | — | — |
+| groq | ✅ | — | — | — | ✅ | — |
+| openrouter | ✅ | ✅ | — | — | — | — |
+| ollama | ✅ | ✅ | — | — | — | — |
+| llamacpp | ✅ | ✅ | — | — | — | — |
+| mistral | ✅ | ✅ | — | — | ✅ | — |
+| deepseek | ✅ | — | — | — | — | — |
+| xai | ✅ | ✅ | ✅ | — | — | — |
+| azure | ✅ | ✅ | ✅ | — | — | — |
+| cohere | ✅ | ✅ | — | — | — | ✅ |
+| elevenlabs | — | — | — | ✅ | — | — |
+| opencode-zen-go | ✅ | — | — | — | — | — |
+| opencode-zen-go-anthropic | ✅ | — | — | — | — | — |
+
+Capabilities are declared via interfaces. Use `instanceof` to check at runtime:
+```php
+if ($llm->providers()->get('gemini') instanceof \MacroLLM\Contract\EmbeddingProviderInterface) {
+    $response = $llm->embed(new EmbeddingRequest(['Hello world']), 'gemini');
+}
+```
+
+### Provider Details
+
 | Provider | Type | Auth | Default Base URL | Notes |
 |---|---|---|---|---|
 | openai | OpenAI-compatible | Bearer API key | `api.openai.com/v1` | Also supports Azure OpenAI via `base_url` override |
