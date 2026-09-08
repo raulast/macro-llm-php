@@ -19,12 +19,17 @@ final class HttpClient
         private readonly int $timeout,
         private readonly int $retries = 0,
         private readonly int $retryDelayMs = 500,
+        ?callable $handler = null,
     ) {
-        $this->client = new Client([
+        $config = [
             'base_uri' => rtrim($baseUrl, '/') . '/',
             'timeout'  => $timeout,
             'headers'  => $headers,
-        ]);
+        ];
+        if ($handler !== null) {
+            $config['handler'] = $handler;
+        }
+        $this->client = new Client($config);
     }
 
     /** JSON POST → decoded array. Retries on connect failure or 429/500/502/503. */
@@ -85,6 +90,7 @@ final class HttpClient
     /**
      * Runs $fn up to $retries+1 times with exponential backoff.
      * Retries on RuntimeException (ConnectException) and ProviderRequestException with status 429/500/502/503.
+     * Does NOT retry on ProviderRequestException with other status codes (400, 404, 422, etc.).
      */
     private function withRetry(\Closure $fn): mixed
     {
@@ -94,8 +100,13 @@ final class HttpClient
             try {
                 return $fn();
             } catch (\Throwable $e) {
-                $retryable = $e instanceof \RuntimeException
-                    || ($e instanceof ProviderRequestException && in_array($e->getCode(), [429, 500, 502, 503], true));
+                // ProviderRequestException with non-retryable status → never retry
+                if ($e instanceof ProviderRequestException && ! in_array($e->getCode(), [429, 500, 502, 503], true)) {
+                    throw $e;
+                }
+
+                // Retry only on RuntimeException (ConnectException wrapping) or retryable ProviderRequestException
+                $retryable = $e instanceof \RuntimeException;
 
                 if (!$retryable || $attempt >= $this->retries) {
                     throw $e;

@@ -157,9 +157,18 @@ final class MacroLLM
                     break;
                 }
 
-                $chunk = $providerInstance->parseStreamEvent($data, $index);
+                // Pass the full SSE line (including "data: " prefix) to parseStreamEvent,
+                // which expects the raw event string and strips the prefix itself.
+                $chunk = $providerInstance->parseStreamEvent($line, $index);
                 if ($chunk !== null) {
                     if ($chunk->finished) {
+                        // Accumulate the delta from the finish chunk before stopping.
+                        // Some providers (e.g. Ollama) include the final content delta
+                        // in the same chunk that signals finish_reason — discarding it
+                        // would result in an empty or truncated final response.
+                        if ($chunk->delta !== '') {
+                            $chunks[] = $chunk;
+                        }
                         $finished = true;
                         break;
                     }
