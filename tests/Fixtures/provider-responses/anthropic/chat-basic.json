@@ -1,0 +1,18 @@
+{
+  "id": "msg_01Abc123",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "Hello! I am Claude, an AI assistant."
+    }
+  ],
+  "model": "claude-sonnet-4-5",
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 12,
+    "output_tokens": 11
+  }
+}

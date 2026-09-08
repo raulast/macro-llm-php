@@ -1,0 +1,18 @@
+{
+  "id": "msg_zen_anthropic123",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "Hello from OpenCode Zen Go Anthropic-compatible!"
+    }
+  ],
+  "model": "MiniMax-M3",
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 10,
+    "output_tokens": 8
+  }
+}

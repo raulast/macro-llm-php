@@ -1,0 +1,3 @@
+{"type":"content-delta","index":0,"delta":{"type":"text-generation","message":{"content":{"type":"text","text":"Hello"}}}}
+{"type":"content-delta","index":0,"delta":{"type":"text-generation","message":{"content":{"type":"text","text":"!"}}}}
+{"type":"message-end","delta":{"finish_reason":"COMPLETE","usage":{"billed_units":{"input_tokens":8,"output_tokens":2}}}}

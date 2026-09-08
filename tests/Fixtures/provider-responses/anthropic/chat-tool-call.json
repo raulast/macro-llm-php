@@ -1,0 +1,22 @@
+{
+  "id": "msg_tool123",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "toolu_abc123",
+      "name": "get_weather",
+      "input": {
+        "city": "Buenos Aires"
+      }
+    }
+  ],
+  "model": "claude-sonnet-4-5",
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 30,
+    "output_tokens": 15
+  }
+}

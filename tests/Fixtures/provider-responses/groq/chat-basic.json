@@ -1,0 +1,24 @@
+{
+  "id": "chatcmpl-groq123",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "llama-3.3-70b-versatile",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Hello from Groq!"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 8,
+    "completion_tokens": 4,
+    "total_tokens": 12
+  },
+  "x_groq": {
+    "id": "req_groq123"
+  }
+}

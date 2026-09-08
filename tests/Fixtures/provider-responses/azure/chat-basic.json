@@ -1,0 +1,22 @@
+{
+  "id": "chatcmpl-azure123",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "gpt-4o",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Hello from Azure OpenAI!"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 8,
+    "completion_tokens": 5,
+    "total_tokens": 13
+  },
+  "system_fingerprint": "fp_azure"
+}

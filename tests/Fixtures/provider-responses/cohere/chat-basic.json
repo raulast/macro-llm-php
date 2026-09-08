@@ -1,0 +1,25 @@
+{
+  "id": "some-cohere-id",
+  "finish_reason": "COMPLETE",
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "Hello from Cohere!"
+      }
+    ]
+  },
+  "usage": {
+    "billed_units": {
+      "input_tokens": 8,
+      "output_tokens": 4,
+      "search_units": 0,
+      "classifications": 0
+    },
+    "tokens": {
+      "input_tokens": 71,
+      "output_tokens": 4
+    }
+  }
+}

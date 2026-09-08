@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl-zen-go123",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "deepseek-v3-0324",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Hello from OpenCode Zen Go!"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 8,
+    "completion_tokens": 6,
+    "total_tokens": 14
+  }
+}

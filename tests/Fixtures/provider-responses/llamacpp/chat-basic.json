@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl-llamacpp123",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "llama-3.2",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Hello from llama.cpp!"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 8,
+    "completion_tokens": 5,
+    "total_tokens": 13
+  }
+}

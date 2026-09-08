@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl-xai123",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "grok-beta",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Hello from xAI Grok!"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 8,
+    "completion_tokens": 5,
+    "total_tokens": 13
+  }
+}
