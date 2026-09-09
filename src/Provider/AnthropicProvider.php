@@ -220,7 +220,9 @@ class AnthropicProvider extends AbstractProvider
                     'type'  => 'tool_use',
                     'id'    => $tc->id,
                     'name'  => $tc->name,
-                    'input' => $tc->arguments,
+                    // Cast to object so an empty array serializes as {} not [].
+                    // Anthropic's API requires a JSON object for the input field.
+                    'input' => (object) $tc->arguments,
                 ];
             }
             return ['role' => 'assistant', 'content' => $content];

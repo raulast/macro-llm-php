@@ -301,7 +301,9 @@ final class GeminiProvider extends AbstractProvider implements
                 $parts[] = ['text' => $message->content];
             }
             foreach ($message->toolCalls as $tc) {
-                $parts[] = ['functionCall' => ['name' => $tc->name, 'args' => $tc->arguments]];
+                // Cast to object so an empty array serializes as {} not [].
+                // Gemini's API requires a JSON object for the args field.
+                $parts[] = ['functionCall' => ['name' => $tc->name, 'args' => (object) $tc->arguments]];
             }
             return ['role' => 'model', 'parts' => $parts];
         }

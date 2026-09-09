@@ -227,7 +227,10 @@ class OpenAICompatibleProvider extends AbstractProvider
                     'type'     => 'function',
                     'function' => [
                         'name'      => $tc->name,
-                        'arguments' => json_encode($tc->arguments),
+                        // Cast to object so an empty array serializes as {} not [].
+                        // All providers require a JSON object for the arguments field,
+                        // even when the tool takes no parameters.
+                        'arguments' => json_encode((object) $tc->arguments),
                     ],
                 ],
                 $message->toolCalls,

@@ -33,6 +33,16 @@ final class MacroLLM
         private readonly ProviderRegistry $providers,
         ?ToolRegistry $tools = null,
         ?SkillRegistry $skills = null,
+        /**
+         * Optional Guzzle handler stack factory for testing.
+         * When non-null, the callable is invoked before each HTTP request and
+         * its return value is passed as the handler to HttpClient, bypassing
+         * the real cURL transport. Production callers must never set this.
+         *
+         * @internal
+         * @var (\Closure(): callable)|null
+         */
+        private readonly ?\Closure $httpHandlerFactory = null,
     ) {
         $this->tools = $tools ?? new ToolRegistry();
         $this->skills = $skills ?? new SkillRegistry($this->tools);
@@ -70,7 +80,8 @@ final class MacroLLM
     }
 
     /**
-     * Send a chat completion request.     */
+     * Send a chat completion request.
+     */
     public function chat(InternalRequest $request, ?string $provider = null): InternalResponse
     {
         $providerName = $this->resolveProviderName($provider, $request);
@@ -89,6 +100,7 @@ final class MacroLLM
             $mergedConfig->timeout(),
             $mergedConfig->retries(),
             $mergedConfig->retryDelayMs(),
+            $this->httpHandlerFactory !== null ? ($this->httpHandlerFactory)() : null,
         ))->post($providerInstance->endpointPath(), $payload);
 
         return $providerInstance->toResponse($data);
