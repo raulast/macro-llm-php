@@ -150,16 +150,9 @@ final class Config
         return null;
     }
 
+    /** Expands ${VAR} placeholders. Delegates to the shared EnvResolver. */
     private function resolveEnvVars(string $value): string
     {
-        return (string) preg_replace_callback(
-            '/\$\{([A-Z0-9_]+)\}/',
-            static function (array $matches): string {
-                $varName = $matches[1];
-                return $_ENV[$varName]
-                    ?? (getenv($varName) !== false ? getenv($varName) : $matches[0]);
-            },
-            $value,
-        );
+        return EnvResolver::resolve($value);
     }
 }

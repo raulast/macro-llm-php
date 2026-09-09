@@ -116,7 +116,11 @@ The config file (`config/macro-llm.php`) defines:
 
 Each provider entry supports: `api_key`, `default_model`, `base_url`, `timeout`, `retries`, `retry_delay_ms`, `extra_headers`. All numeric fields are `?int` — `null` means "use global value".
 
-API keys support environment variable patterns (`'${ENV_VAR}'`) resolved lazily at access time.
+API keys and other string settings support environment variable patterns
+(`'${ENV_VAR}'`), expanded when the configuration object is built. Load your
+`.env` before constructing `Config`. A variable that is not defined is left
+verbatim rather than collapsing to an empty string, so a misconfiguration stays
+visible instead of turning into a confusing 401.
 
 Example `.env` entries:
 

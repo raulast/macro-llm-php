@@ -4,7 +4,7 @@
 
 `macro-llm-php` is a provider-agnostic AI client Composer package for PHP 8.1+.
 It uses a thin Guzzle HTTP layer (no `illuminate/http` required in core) for all provider communication,
-exposing a unified interface (`InternalRequest` / `InternalResponse`) across **14 AI providers**.
+exposing a unified interface (`InternalRequest` / `InternalResponse`) across **15 AI providers**.
 It ships a full agentic stack: Skills, Agents, multi-agent Orchestration, MCP client, and MCP server.
 Supports vision/multimodal messages, structured output (JSON Schema), and persistent conversation memory.
 
@@ -661,7 +661,7 @@ Config::fromArray([
     'max_tool_iterations' => 10,         // agent loop max
     'providers' => [
         'openai' => [
-            'api_key'        => '${OPENAI_API_KEY}', // ${VAR} resolved lazily from env
+            'api_key'        => '${OPENAI_API_KEY}', // ${VAR} expanded when Config is built
             'default_model'  => 'gpt-4o',
             'base_url'       => null,     // override for Azure OpenAI
             'timeout'        => null,     // ?int — null = use global timeout
@@ -760,7 +760,7 @@ try {
 - Providers with discovery endpoints (OpenAI-compat, Anthropic, Gemini) attempt a live API call first.
 - Providers without guaranteed endpoints (Anthropic, Gemini, opencode-zen-go-anthropic) fall back to a curated static list.
 - `InternalRequest` and `InternalResponse` are immutable `readonly` classes.
-- `Config` values with `${VAR}` pattern are resolved lazily at `get()` time (not at construction).
+- **`${VAR}` expansion happens at CONSTRUCTION, not lazily**: `ProviderConfig` expands `apiKey`, `defaultModel`, `baseUrl` and `extraHeaders` through `EnvResolver` in its constructor, because providers read those properties directly and never call `Config::get()`. Load your `.env` BEFORE building `Config`. An undefined variable is left verbatim (e.g. the literal `${OPENAI_API_KEY}` reaches the provider) so the misconfiguration is visible rather than masked as an empty credential.
 - `SkillRegistry::register()` validates tool existence at registration time (fail-fast).
 - `ProviderRegistry::register()` replaces on duplicate provider name (no exception).
 - `NullMemory` is the default memory — agents are stateless unless `InMemoryMemory` is explicitly set.
