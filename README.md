@@ -504,13 +504,40 @@ MacroLLM follows a hexagonal architecture. The core domain (`Message`, `Contract
 | `UnregisteredProviderException` | Macro called for unregistered provider |
 | `ProviderRequestException` | HTTP 4xx/5xx from provider API |
 | `MissingApiKeyException` | API key missing before request |
-| `ToolNotFoundException` | Model requested an unregistered tool |
+| `ToolNotFoundException` | `ToolRegistry::get()` asked for a name that was never registered |
 | `MaxToolIterationsException` | Agent loop exceeded max iterations |
 | `SkillToolConflictException` | Two composed skills define same tool |
 | `SkillToolNotFoundException` | Skill references a tool not in the registry |
 | `MCPConnectionException` | MCP server unreachable |
 | `MCPToolCallException` | MCP server returned error |
 | `StreamInterruptedException` | SSE stream ended unexpectedly |
+
+An agent only executes the tools it was given — the ones resolved from its
+skills plus `AgentConfig::tools`. If a model names a tool outside that set, the
+agent does not throw: it returns a `ToolResult` in error state so the model can
+correct itself, and the loop continues. Tools passed through `AgentConfig::tools`
+do not need to be registered in the global `ToolRegistry` as well.
+
+## Testing
+
+```bash
+composer install
+composer test              # unit suite — offline, no API keys required
+composer test:integration  # live tests against a local Ollama
+composer test:coverage
+```
+
+`composer test` runs the unit suite only: 225 tests backed by hand-authored
+fixtures, no network. It passes on a clean checkout with no credentials.
+
+The integration suite exercises a locally running Ollama and self-skips when it
+is unreachable, so it never fails a machine that does not have it. Capabilities
+no local provider can serve — image generation, TTS, STT, reranking, and the
+provider-specific end-to-end paths — are present as explicitly skipped tests, so
+the coverage gap shows up in the output instead of being silently absent.
+
+Note that the integration suite talks to real models and can take tens of
+minutes depending on the machine and which models are warm.
 
 ## License
 

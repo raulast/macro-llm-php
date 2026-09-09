@@ -723,7 +723,7 @@ new AgentConfig(
 | `ProviderRequestException` | `MacroLLM\Exception` | `string $provider, int $status, string $body` | HTTP 4xx/5xx from provider API |
 | `MissingApiKeyException` | `MacroLLM\Exception` | `string $provider` | API key missing before request |
 | `StreamInterruptedException` | `MacroLLM\Exception` | `array $chunks` | SSE stream dropped before finish |
-| `ToolNotFoundException` | `MacroLLM\Exception` | `string $toolName` | Model called unregistered tool |
+| `ToolNotFoundException` | `MacroLLM\Exception` | `string $toolName` | `ToolRegistry::get()` asked for a name never registered |
 | `MaxToolIterationsException` | `MacroLLM\Exception` | `int $iterations, InternalResponse $last` | Agent loop hit iteration cap |
 | `SkillToolNotFoundException` | `MacroLLM\Exception` | `string $skillName, string $toolName` | Skill references unregistered tool (at registration) |
 | `SkillToolConflictException` | `MacroLLM\Exception` | `string $toolName, string $skill1, string $skill2` | Two skills define same tool |
@@ -764,6 +764,9 @@ try {
 - `SkillRegistry::register()` validates tool existence at registration time (fail-fast).
 - `ProviderRegistry::register()` replaces on duplicate provider name (no exception).
 - `NullMemory` is the default memory — agents are stateless unless `InMemoryMemory` is explicitly set.
+- **Agent tool scope**: `Agent` executes only the tools it advertised — those resolved from its skills plus `AgentConfig::tools`. A `ToolDefinition` passed via `AgentConfig::tools` does NOT need to be registered in the global `ToolRegistry`; it is executable as-is. When a model names a tool outside the offered set, the agent returns a `ToolResult` in error state rather than throwing, and the loop continues so the model can self-correct.
+- **Empty tool arguments serialize as `{}`, never `[]`**: `ToolCall::$arguments` is a PHP array, and an empty array would serialize to a JSON array. Providers require an object, so the payload builders cast with `(object)`. A tool declared with no parameters works on OpenAI-compatible, Anthropic and Gemini.
+- **Test suite**: `composer test` runs the offline unit suite (225 tests, no API keys, hand-authored fixtures). `composer test:integration` runs live tests against a local Ollama and self-skips when unreachable. PHPUnit 11 is in `require-dev`, so consumers on PHP 8.1 are unaffected; contributors need PHP 8.2+.
 - All package exceptions extend `MacroLLMException` — catch-all with a single `catch (MacroLLMException)`.
 - **`Usage` token fields**: `promptTokens`, `completionTokens`, `totalTokens` — there is NO `inputTokens` or `outputTokens`.
 - **`Skill` is abstract** — `Skill::fromArray()` and `Skill::create()` return a `GenericSkill` instance when called directly on `Skill`. Subclasses continue to return `new static()`. No need to create a concrete subclass just for hydration.
