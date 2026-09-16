@@ -60,22 +60,25 @@ final class MCPClient
             // the base URL and append a trailing slash (MCPC-3).
             // `retries` is the literal 0, never HttpClient's default, so a future default
             // change cannot silently arm retries for MCP traffic (MCPC-9).
-            $data = (new HttpClient($url, $this->buildHeaders($auth), self::TIMEOUT, 0, 500, $handler))
-                ->post($url, [
-                    'jsonrpc' => '2.0',
-                    'id' => 1,
-                    'method' => 'tools/list',
-                    'params' => [],
-                ]);
+            $data = (new HttpClient(
+                baseUrl: $url,
+                headers: $this->buildHeaders($auth),
+                timeout: self::TIMEOUT,
+                retries: 0,
+                retryDelayMs: 500,
+                handler: $handler,
+            ))->post($url, [
+                'jsonrpc' => '2.0',
+                'id' => 1,
+                'method' => 'tools/list',
+                'params' => [],
+            ]);
         } catch (ProviderRequestException $e) {
-            // An HTTP failure — this clause MUST precede the \RuntimeException clause below,
-            // because ProviderRequestException is itself a \RuntimeException (MCPC-6).
+            // An HTTP failure — this clause MUST precede the \Throwable clause below, because
+            // ProviderRequestException is itself a \RuntimeException (MCPC-6).
             throw new MCPConnectionException($url, "HTTP {$e->statusCode}");
-        } catch (\RuntimeException $e) {
-            // Connect failure raised by the transport (MCPC-5).
-            throw new MCPConnectionException($url, $e->getMessage());
         } catch (\Throwable $e) {
-            // Pre-migration blanket catch, kept as-is for every other throwable (MCPC-5).
+            // Everything else, a transport \RuntimeException included: one wrap, one message (MCPC-5).
             throw new MCPConnectionException($url, $e->getMessage());
         }
 
@@ -104,21 +107,26 @@ final class MCPClient
             // Absolute URL as both base and path: post('') would append a trailing slash (MCPC-3).
             // `retries` is the literal 0: a retried tools/call can execute a non-idempotent
             // action twice, and the default must not be able to arm retries for MCP (MCPC-9).
-            $data = (new HttpClient($server['url'], $this->buildHeaders($server['auth']), self::TIMEOUT, 0, 500, $handler))
-                ->post($server['url'], [
-                    'jsonrpc' => '2.0',
-                    'id' => 1,
-                    'method' => 'tools/call',
-                    'params' => ['name' => $toolName, 'arguments' => $arguments],
-                ]);
+            $data = (new HttpClient(
+                baseUrl: $server['url'],
+                headers: $this->buildHeaders($server['auth']),
+                timeout: self::TIMEOUT,
+                retries: 0,
+                retryDelayMs: 500,
+                handler: $handler,
+            ))->post($server['url'], [
+                'jsonrpc' => '2.0',
+                'id' => 1,
+                'method' => 'tools/call',
+                'params' => ['name' => $toolName, 'arguments' => $arguments],
+            ]);
         } catch (ProviderRequestException $e) {
             // HTTP failure first (MCPC-6). A failed response may still carry a structured
             // JSON-RPC error body, so re-decode it instead of losing the detail (MCPC-8).
             $error = json_decode($e->responseBody, true)['error'] ?? null;
             throw self::toolCallFailure($toolName, is_array($error) ? $error : null, $e->responseBody);
-        } catch (\RuntimeException $e) {
-            throw new MCPConnectionException($server['url'], $e->getMessage());
         } catch (\Throwable $e) {
+            // Everything else, a transport \RuntimeException included: one wrap, one message (MCPC-6).
             throw new MCPConnectionException($server['url'], $e->getMessage());
         }
 
@@ -139,6 +147,9 @@ final class MCPClient
      * Maps a JSON-RPC error body onto MCPToolCallException, falling back to -32603 only when
      * the body is not JSON or carries no integer `error.code` (MCPC-8).
      *
+     * A `message` that is missing, non-string, **or empty** is not usable text, so the raw body is
+     * used instead of an empty exception message. Failure wording is non-contractual (MCPC-5).
+     *
      * @param array<string, mixed>|null $error
      */
     private static function toolCallFailure(string $toolName, ?array $error, string $fallbackMessage): MCPToolCallException
@@ -147,10 +158,12 @@ final class MCPClient
             return new MCPToolCallException($toolName, -32603, $fallbackMessage);
         }
 
+        $message = $error['message'] ?? null;
+
         return new MCPToolCallException(
             $toolName,
             $error['code'],
-            is_string($error['message'] ?? null) ? $error['message'] : $fallbackMessage,
+            is_string($message) && $message !== '' ? $message : $fallbackMessage,
         );
     }
 

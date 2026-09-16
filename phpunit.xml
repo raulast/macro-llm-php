@@ -18,6 +18,5 @@
     </testsuites>
     <source>
         <include><directory>src</directory></include>
-        <exclude><directory>src/skill-macro-llm-php</directory></exclude>
     </source>
 </phpunit>

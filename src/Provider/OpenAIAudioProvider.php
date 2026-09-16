@@ -7,7 +7,6 @@ namespace MacroLLM\Provider;
 use MacroLLM\Config\ProviderConfig;
 use MacroLLM\Contract\AudioProviderInterface;
 use MacroLLM\Exception\MissingApiKeyException;
-use MacroLLM\Http\HttpClient;
 use MacroLLM\Message\AudioRequest;
 use MacroLLM\Message\AudioResponse;
 use MacroLLM\Message\TranscriptionRequest;

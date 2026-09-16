@@ -337,6 +337,23 @@ final class MCPClientTest extends TestCase
                 new Response(200, [], '{"result":null,"error":{"code":-32602,"message":"Invalid params"}}'),
                 -32602, 'Invalid params',
             ],
+            // An integer `error.code` with a message that is not usable text. The body is the only
+            // faithful fallback, and an EMPTY string must not become an empty exception message.
+            'HTTP failure with an empty error message' => [
+                new Response(500, [], '{"error":{"code":-32000,"message":""}}'),
+                -32000,
+                '{"error":{"code":-32000,"message":""}}',
+            ],
+            'HTTP failure with a non-string error message' => [
+                new Response(500, [], '{"error":{"code":-32000,"message":123}}'),
+                -32000,
+                '{"error":{"code":-32000,"message":123}}',
+            ],
+            'HTTP failure with no message member at all' => [
+                new Response(500, [], '{"error":{"code":-32000}}'),
+                -32000,
+                '{"error":{"code":-32000}}',
+            ],
         ];
     }
 
@@ -350,7 +367,9 @@ final class MCPClientTest extends TestCase
             $this->invokeReadFile($tools, ['path' => '/etc/hosts']);
             $this->fail('a JSON-RPC error must surface as MCPToolCallException');
         } catch (MCPToolCallException $e) {
-            $this->assertNotInstanceOf(MCPConnectionException::class, $e);
+            // The exception type is carried structurally: a MCPConnectionException would not match
+            // this clause and would error the test out instead. An assertNotInstanceOf here would be
+            // unfailable, so it is deliberately absent.
             $this->assertSame($code, $e->errorCode);
             $this->assertSame($message, $e->errorMessage);
             $this->assertSame($code, $e->getCode());
@@ -386,8 +405,8 @@ final class MCPClientTest extends TestCase
         $client->connect('filesystem', self::URL);
         $returned = $this->invokeReadFile($tools, ['path' => '/etc/hosts']);
 
+        // MCPC-7: null !== [], so this single assertion already proves "never an empty array".
         $this->assertNull($returned);
-        $this->assertNotSame([], $returned);
     }
 
     // ── MCPC-13 + MCPC-11 — boundary and freeze pins ────────────────────────
