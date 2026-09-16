@@ -45,9 +45,6 @@ class ProviderFactoryTest extends TestCase
         return new ProviderConfig(apiKey: 'test-key', defaultModel: 'test-model');
     }
 
-    /**
-     * @dataProvider allProvidersProvider
-     */
     #[DataProvider('allProvidersProvider')]
     public function testMakeReturnsCorrectClass(string $name, string $expectedClass): void
     {

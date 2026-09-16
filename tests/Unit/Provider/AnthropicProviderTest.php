@@ -93,9 +93,6 @@ class AnthropicProviderTest extends TestCase
 
     // ── toResponse: finish reason / stop_reason mapping ───────────────────
 
-    /**
-     * @dataProvider stopReasonProvider
-     */
     #[DataProvider('stopReasonProvider')]
     public function testStopReasonMapping(string $raw, FinishReason $expected): void
     {

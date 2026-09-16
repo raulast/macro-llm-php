@@ -111,9 +111,6 @@ class OpenAICompatibleProviderTest extends TestCase
 
     // ── toResponse: finish reason mapping ─────────────────────────────────
 
-    /**
-     * @dataProvider finishReasonProvider
-     */
     #[DataProvider('finishReasonProvider')]
     public function testFinishReasonMapping(string $raw, FinishReason $expected): void
     {
@@ -311,9 +308,6 @@ class OpenAICompatibleProviderTest extends TestCase
 
     // ── Per-provider identity differences ─────────────────────────────────
 
-    /**
-     * @dataProvider providerIdentityProvider
-     */
     #[DataProvider('providerIdentityProvider')]
     public function testProviderName(string $class, string $expectedName): void
     {
@@ -321,9 +315,6 @@ class OpenAICompatibleProviderTest extends TestCase
         $this->assertSame($expectedName, $provider->name());
     }
 
-    /**
-     * @dataProvider providerIdentityProvider
-     */
     #[DataProvider('providerIdentityProvider')]
     public function testProviderEndpointPath(string $class, string $name, string $expectedEndpoint): void
     {

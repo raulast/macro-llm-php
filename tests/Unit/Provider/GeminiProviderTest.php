@@ -93,9 +93,6 @@ class GeminiProviderTest extends TestCase
 
     // ── toResponse: finishReason mapping ──────────────────────────────────
 
-    /**
-     * @dataProvider finishReasonProvider
-     */
     #[DataProvider('finishReasonProvider')]
     public function testFinishReasonMapping(string $raw, FinishReason $expected): void
     {
