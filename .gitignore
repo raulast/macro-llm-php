@@ -9,3 +9,5 @@ openspec
 .phpunit.result.cache
 # Machine-local SDD preflight state (mirrors the openspec/ decision)
 .pi
+# Local ODD task tracking (same local-only decision as openspec/ and .pi)
+odd
