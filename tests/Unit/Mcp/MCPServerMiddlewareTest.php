@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace MacroLLM\Tests\Unit\Mcp;
 
-use InvalidArgumentException;
 use MacroLLM\Mcp\MCPServer;
 use MacroLLM\Mcp\MCPServerMiddleware;
 use MacroLLM\Registry\ToolRegistry;
@@ -15,6 +14,7 @@ use Nyholm\Psr7\ServerRequest;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use ReflectionMethod;
 
 /**
  * PSR-15 middleware that mounts MCPServer on a path. Covers the JSON-RPC routing
@@ -346,22 +346,18 @@ final class MCPServerMiddlewareTest extends TestCase
 
     // ── Documented latent bug ───────────────────────────────────────────────
 
-    public function test_invalid_utf8_in_a_tool_string_result_aborts_the_response(): void
+    public function test_invalid_utf8_in_a_tool_string_result_returns_a_json_rpc_error(): void
     {
-        // KNOWN BUG (pinned, not endorsed). MCPServer puts raw invalid-UTF-8 bytes into
-        // `result.content[0].text`, then jsonResponse() calls json_encode() on the whole
-        // payload. json_encode() returns false, and Nyholm's Response constructor throws
-        // on a false body — an uncaught InvalidArgumentException instead of a JSON-RPC error.
-        //
-        // When this is fixed (encode with JSON_INVALID_UTF8_SUBSTITUTE, or guard the false),
-        // this test must be replaced by one asserting a well-formed JSON-RPC response.
+        // Regression guard for a crash. MCPServer used to place raw invalid-UTF-8 bytes into
+        // `result.content[0].text`; json_encode() then returned false for the whole payload,
+        // and Nyholm's Response constructor threw on a false body — an uncaught
+        // InvalidArgumentException instead of a JSON-RPC error. The client now gets a
+        // well-formed error response.
         $middleware = new MCPServerMiddleware($this->serverWithTools(
             $this->tool('bad_utf8', fn() => "\xB1\x31"),
         ));
 
-        $this->expectException(InvalidArgumentException::class);
-
-        $middleware->process(
+        $response = $middleware->process(
             $this->request('/mcp', [
                 'jsonrpc' => '2.0',
                 'id'      => 6,
@@ -370,5 +366,36 @@ final class MCPServerMiddlewareTest extends TestCase
             ]),
             $this->recordingHandler(),
         );
+
+        $this->assertSame(200, $response->getStatusCode());
+
+        $decoded = $this->decode($response);
+
+        $this->assertSame('2.0', $decoded['jsonrpc']);
+        $this->assertSame(6, $decoded['id']);
+        $this->assertSame(-32603, $decoded['error']['code']);
+        $this->assertArrayNotHasKey('result', $decoded);
+    }
+
+    public function test_json_response_never_hands_an_unencodable_body_to_the_psr7_layer(): void
+    {
+        // Defence in depth at the serialisation boundary. MCPServer::callTool() rejects
+        // unencodable tool output, so this path should be unreachable in practice — but the
+        // boundary itself must never let json_encode()'s false escape into a PSR-7 Response,
+        // because that is what turned a bad tool result into a fatal error.
+        $middleware = new MCPServerMiddleware($this->serverWithTools());
+
+        $jsonResponse = new ReflectionMethod($middleware, 'jsonResponse');
+        $jsonResponse->setAccessible(true);
+
+        $response = $jsonResponse->invoke($middleware, ['bad' => "\xB1\x31"]);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertNotSame('', (string) $response->getBody());
+
+        $decoded = json_decode((string) $response->getBody(), true);
+
+        $this->assertIsArray($decoded, 'The fallback body must itself be valid JSON.');
+        $this->assertSame(-32603, $decoded['error']['code']);
     }
 }

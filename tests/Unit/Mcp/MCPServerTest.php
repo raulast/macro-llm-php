@@ -117,23 +117,28 @@ final class MCPServerTest extends TestCase
         $this->assertSame(['a' => 1, 'b' => 'two'], $received);
     }
 
-    public function test_call_tool_passes_an_invalid_utf8_string_result_through_verbatim(): void
+    public function test_call_tool_returns_an_internal_error_for_an_invalid_utf8_string_result(): void
     {
-        // `is_string($result)` is true for invalid UTF-8 too, so the raw bytes are placed
-        // in `text` without any encoding or validation. MCPServer never notices.
+        // A tool that returns non-UTF-8 bytes cannot be represented in a JSON-RPC text
+        // content block. The server reports that as an internal error instead of passing the
+        // raw bytes through, because unencodable bytes later make the whole response
+        // unencodable and used to crash the middleware.
         $registry = new ToolRegistry();
         $registry->register($this->tool('bad_utf8', 'Bad UTF-8', fn() => "\xB1\x31"));
 
         $result = (new MCPServer($registry))->callTool('bad_utf8', []);
 
-        $this->assertSame("\xB1\x31", $result['result']['content'][0]['text']);
+        $this->assertArrayHasKey('error', $result);
+        $this->assertArrayNotHasKey('result', $result);
+        $this->assertSame(-32603, $result['error']['code']);
+        $this->assertStringContainsString('UTF-8', $result['error']['message']);
     }
 
-    public function test_call_tool_marks_a_non_encodable_result_as_false(): void
+    public function test_call_tool_returns_an_internal_error_for_a_non_encodable_result(): void
     {
-        // The `is_string($result) ? ... : json_encode($result)` branch: a resource cannot be
-        // JSON-encoded, json_encode() returns false, and that false lands in `text` verbatim.
-        // So the MCP payload carries a boolean where the schema promises a string.
+        // A resource has no JSON representation. Previously json_encode() returned false and
+        // that false was placed in `content[0].text`, so the payload carried a boolean where
+        // the MCP schema promises a string.
         $registry = new ToolRegistry();
         $registry->register($this->tool('resource_tool', 'Returns a resource', function () {
             return fopen('php://memory', 'r');
@@ -141,7 +146,24 @@ final class MCPServerTest extends TestCase
 
         $result = (new MCPServer($registry))->callTool('resource_tool', []);
 
-        $this->assertFalse($result['result']['content'][0]['text']);
+        $this->assertArrayHasKey('error', $result);
+        $this->assertArrayNotHasKey('result', $result);
+        $this->assertSame(-32603, $result['error']['code']);
+    }
+
+    public function test_call_tool_text_content_is_always_a_string(): void
+    {
+        // The MCP schema types `content[].text` as a string. This holds for both the
+        // pass-through branch and the json_encode branch.
+        $registry = new ToolRegistry();
+        $registry->register($this->tool('returns_string', 'String', fn() => 'plain'));
+        $registry->register($this->tool('returns_array', 'Array', fn() => ['a' => 1]));
+
+        $server = new MCPServer($registry);
+
+        foreach (['returns_string', 'returns_array'] as $name) {
+            $this->assertIsString($server->callTool($name, [])['result']['content'][0]['text']);
+        }
     }
 
     // ── tools/call — errors ─────────────────────────────────────────────────

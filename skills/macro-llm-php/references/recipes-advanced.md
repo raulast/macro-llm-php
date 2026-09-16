@@ -96,6 +96,8 @@ $slimApp->add($mcpMiddleware);
 
 `MCPServer` adapts the local tool registry to the MCP protocol, and `MCPServerMiddleware` exposes it as a PSR-15 middleware mounted at the configured `path`. The JSON-RPC 2.0 payloads above are the two core methods a client will send: `tools/list` for discovery and `tools/call` for invocation.
 
+**Tool output contract.** A tool's return value becomes the `text` field of a single `text` content block. A string is passed through as-is; anything else is JSON-encoded. If the value has no faithful text representation — a string that is not valid UTF-8, or a value `json_encode()` cannot encode, such as a resource — the server returns a JSON-RPC internal error (`-32603`) naming the tool instead of a result. It does not substitute replacement characters or coerce the value, because either would deliver data the client cannot distinguish from real tool output.
+
 ### Recipe 16: Slim 4 Integration
 
 ```php

@@ -64,12 +64,32 @@ final class MCPServerMiddleware implements MiddlewareInterface
         ]);
     }
 
+    /**
+     * Emitted when a payload cannot be JSON-encoded. Plain ASCII, so it always encodes.
+     */
+    private const UNENCODABLE_FALLBACK_BODY =
+        '{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"Response could not be encoded as JSON."}}';
+
+    /**
+     * Serialise a JSON-RPC envelope into a PSR-7 response.
+     *
+     * json_encode() returns false for unencodable data, and handing that false to a PSR-7
+     * Response constructor throws. MCPServer::callTool() rejects unencodable tool output before
+     * it reaches here, so this path should be unreachable — but a serialisation boundary must
+     * never crash, so it degrades to a well-formed internal-error body instead.
+     */
     private function jsonResponse(array $data): ResponseInterface
     {
+        $body = json_encode($data);
+
+        if ($body === false) {
+            $body = self::UNENCODABLE_FALLBACK_BODY;
+        }
+
         return new Response(
             status: 200,
             headers: ['Content-Type' => 'application/json'],
-            body: json_encode($data),
+            body: $body,
         );
     }
 
