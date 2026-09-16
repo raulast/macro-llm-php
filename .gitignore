@@ -7,3 +7,5 @@ composer.lock
 openspec
 .phpunit.cache
 .phpunit.result.cache
+# Machine-local SDD preflight state (mirrors the openspec/ decision)
+.pi
