@@ -62,6 +62,7 @@ The canonical shape above is also the documented default for every key; the Defa
 | `retries` | `?int` | `null` | Per-provider retry count override. |
 | `retry_delay_ms` | `?int` | `null` | Per-provider backoff base delay override in ms. |
 | `extra_headers` | `array` | `[]` | Extra HTTP headers sent with every request to that provider. |
+| `fallback` | `array` | `[]` | Provider names to try, in order, when this one fails in a way another provider might survive. **Empty by default: no hop happens unless you ask for one.** See `providers.md` for which failures qualify. |
 
 The three nullable numeric fields — `timeout`, `retries`, and `retry_delay_ms` — are typed `?int`, where `null` means "not overridden — the global `Config` value wins".
 

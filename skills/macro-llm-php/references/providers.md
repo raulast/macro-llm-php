@@ -94,6 +94,51 @@ Non-chat capabilities are implemented by dedicated classes, because chat provide
 | `GeminiEmbeddingProvider` | Gemini embeddings |
 | `OllamaEmbeddingProvider` | Local Ollama embeddings |
 
+## Failover
+
+Configure a chain and a failed request hands over to the next provider instead of failing:
+
+```php
+'providers' => [
+    'openai' => [
+        'api_key' => '${OPENAI_API_KEY}',
+        'default_model' => 'gpt-4o',
+        'fallback' => ['anthropic', 'gemini'],   // ordered, and empty by default
+    ],
+    // …the providers named above must each be configured too
+],
+```
+
+**Which failures hand over — and which do not.** This is the part that protects your wallet:
+
+| Failure | Hands over? | Why |
+| --- | --- | --- |
+| `429`, `500`, `502`, `503`, `504` | **yes** | A rate limit or a broken provider is what a second provider is for. |
+| Connection failure / timeout | **yes** | Nothing was reached at all. |
+| Any other `4xx` (`400`, `401`, `403`, `404`, `422`, …) | **no** | It is a verdict on the *request*, and the next provider renders the same verdict. |
+| A schema, capability or configuration error | **no** | Not a transport problem, so another provider cannot fix it. |
+
+**A `401` never hands over, deliberately.** A hop spends the next provider's key, and a misconfigured key would
+spend a second account to learn nothing — turning one clear error into a confusing chain of them.
+
+**Knowing who answered.** `InternalResponse::$providerName` names the provider that actually produced the response,
+which with a chain is not necessarily the one you asked for:
+
+```php
+$response = $llm->chat($request, 'openai');
+if ($response->providerName !== 'openai') {
+    // the chain moved: log it, alert, or adapt
+}
+```
+
+**When every provider fails**, `ProviderFailoverException` is raised with `$e->causes` — every failure keyed by the
+provider that produced it, in the order they were tried — so "the first was rate limited and the second was down"
+reaches you intact instead of collapsing into the last error.
+
+**Streaming hops only before the stream starts.** Once bytes are flowing, switching providers would splice two
+different responses into one, so the chain covers the request that opens the stream and nothing after it. Providers
+in the chain that cannot stream are skipped for streaming requests.
+
 ## DeepSeek compatibility note
 
 DeepSeek is dual-compatible. It serves an OpenAI-compatible surface at `https://api.deepseek.com` (`/v1`) and an Anthropic-compatible surface at `https://api.deepseek.com/anthropic`, which serves `POST /v1/messages`.

@@ -8,7 +8,10 @@ use Generator;
 use MacroLLM\Agent\Agent;
 use MacroLLM\Agent\AgentConfig;
 use MacroLLM\Config\Config;
+use MacroLLM\Contract\ProviderInterface;
+use MacroLLM\Exception\MacroLLMException;
 use MacroLLM\Exception\MissingApiKeyException;
+use MacroLLM\Exception\ProviderFailoverException;
 use MacroLLM\Exception\ProviderRequestException;
 use MacroLLM\Exception\StreamInterruptedException;
 use MacroLLM\Http\HttpClient;
@@ -18,6 +21,7 @@ use MacroLLM\Message\InternalResponse;
 use MacroLLM\Message\StreamChunk;
 use MacroLLM\Message\Usage;
 use MacroLLM\Orchestration\Orchestrator;
+use MacroLLM\Provider\FailoverPolicy;
 use MacroLLM\Provider\ProviderFactory;
 use MacroLLM\Registry\ProviderRegistry;
 use MacroLLM\Registry\SkillRegistry;
@@ -84,26 +88,26 @@ final class MacroLLM
      */
     public function chat(InternalRequest $request, ?string $provider = null): InternalResponse
     {
-        $providerName = $this->resolveProviderName($provider, $request);
-        $providerInstance = $this->providers->get($providerName);
+        $primary = $this->resolveProviderName($provider, $request);
 
-        $mergedConfig = $this->config->mergedWith($request->configOverride);
+        return $this->throughChain(
+            $this->providerChain($primary),
+            $request,
+            function (string $name, ProviderInterface $instance, Config $mergedConfig) use ($request): InternalResponse {
+                $payload = $instance->toPayload($request);
 
-        // Validate API key early (will throw MissingApiKeyException if missing)
-        $providerInstance->headers();
+                $data = $this->send($name, fn (): array => (new HttpClient(
+                    $instance->baseUrl(),
+                    $instance->headers(),
+                    $mergedConfig->timeout(),
+                    $mergedConfig->retries(),
+                    $mergedConfig->retryDelayMs(),
+                    $this->httpHandlerFactory !== null ? ($this->httpHandlerFactory)() : null,
+                ))->post($instance->endpointPath(), $payload));
 
-        $payload = $providerInstance->toPayload($request);
-
-        $data = $this->send($providerName, fn (): array => (new HttpClient(
-            $providerInstance->baseUrl(),
-            $providerInstance->headers(),
-            $mergedConfig->timeout(),
-            $mergedConfig->retries(),
-            $mergedConfig->retryDelayMs(),
-            $this->httpHandlerFactory !== null ? ($this->httpHandlerFactory)() : null,
-        ))->post($providerInstance->endpointPath(), $payload));
-
-        return $providerInstance->toResponse($data);
+                return $instance->toResponse($data)->withProviderName($name);
+            },
+        );
     }
 
     /**
@@ -114,11 +118,10 @@ final class MacroLLM
      */
     public function stream(InternalRequest $request, ?string $provider = null): Generator
     {
-        $providerName = $this->resolveProviderName($provider, $request);
-        $providerInstance = $this->providers->get($providerName);
+        $primary = $this->resolveProviderName($provider, $request);
 
-        if (!$providerInstance->supportsStreaming()) {
-            $response = $this->chat($request, $providerName);
+        if (!$this->providers->get($primary)->supportsStreaming()) {
+            $response = $this->chat($request, $primary);
             yield new StreamChunk(
                 delta: $response->content ?? '',
                 index: 0,
@@ -127,9 +130,6 @@ final class MacroLLM
             );
             return;
         }
-
-        $mergedConfig = $this->config->mergedWith($request->configOverride);
-        $providerInstance->headers();
 
         $streamRequest = new InternalRequest(
             messages: $request->messages,
@@ -142,18 +142,34 @@ final class MacroLLM
             responseFormat: $request->responseFormat,
         );
 
-        $payload = $providerInstance->toPayload($streamRequest);
+        $answeredBy = $primary;
 
-        $body = $this->send($providerName, fn (): string => (new HttpClient(
-            $providerInstance->baseUrl(),
-            $providerInstance->headers(),
-            $mergedConfig->timeout(),
-            $mergedConfig->retries(),
-            $mergedConfig->retryDelayMs(),
-            // The same `@internal` seam `chat()` passes. Its absence was why this path had no offline test at
-            // all: without it every attempt is a real network call, so nothing could stub a stream.
-            $this->httpHandlerFactory !== null ? ($this->httpHandlerFactory)() : null,
-        ))->stream($providerInstance->endpointPath(), $payload));
+        // The hop covers only the request that STARTS the stream. Once bytes are flowing, switching providers would
+        // splice two different responses into one, which would be worse than the failure it hid.
+        $body = $this->throughChain(
+            $this->streamingChain($primary),
+            $request,
+            function (string $name, ProviderInterface $instance, Config $mergedConfig) use ($streamRequest, &$answeredBy): string {
+                $answeredBy = $name;
+
+                $payload = $instance->toPayload($streamRequest);
+
+                return $this->send($name, fn (): string => (new HttpClient(
+                    $instance->baseUrl(),
+                    $instance->headers(),
+                    $mergedConfig->timeout(),
+                    $mergedConfig->retries(),
+                    $mergedConfig->retryDelayMs(),
+                    // The same `@internal` seam `chat()` passes. Its absence was why this path had no offline test
+                    // at all: without it every attempt is a real network call, so nothing could stub a stream.
+                    $this->httpHandlerFactory !== null ? ($this->httpHandlerFactory)() : null,
+                ))->stream($instance->endpointPath(), $payload));
+            },
+        );
+
+        // Whoever answered parses the stream: with a chain configured, the provider that produced the bytes is not
+        // necessarily the one that was requested.
+        $providerInstance = $this->providers->get($answeredBy);
 
         $chunks = [];
         $index = 0;
@@ -204,7 +220,7 @@ final class MacroLLM
                 content: $fullContent !== '' ? $fullContent : null,
                 finishReason: FinishReason::Stop,
                 usage: new Usage(),
-            );
+            )->withProviderName($answeredBy);
             yield new StreamChunk(delta: '', index: $index, finished: true, response: $finalResponse);
             return;
         }
@@ -392,6 +408,80 @@ final class MacroLLM
         } catch (ProviderRequestException $e) {
             throw $e->forProvider($providerName);
         }
+    }
+
+    /**
+     * Runs one attempt, handing over to the next provider in the chain when the failure is one another provider
+     * might survive.
+     *
+     * The rules, in the order they are applied:
+     *  1. **No chain configured → the failure is thrown unchanged.** A caller who configured one provider sees
+     *     exactly what they saw before failover existed.
+     *  2. **A failure the next provider would repeat → thrown immediately.** Hopping on a 401 would spend the next
+     *     provider's key to learn nothing (see {@see FailoverPolicy}).
+     *  3. **A failure another provider might survive → recorded, and the next provider is tried.**
+     *  4. **Nothing left → {@see ProviderFailoverException} carrying every cause**, because "the first was rate
+     *     limited and the second was down" is the diagnostic a chain exists to produce.
+     *
+     * @template T
+     * @param  list<string>                                     $chain
+     * @param  callable(string, ProviderInterface, Config): T   $attempt
+     * @return T
+     */
+    private function throughChain(array $chain, InternalRequest $request, callable $attempt): mixed
+    {
+        $mergedConfig = $this->config->mergedWith($request->configOverride);
+        $causes = [];
+
+        foreach ($chain as $name) {
+            try {
+                $instance = $this->providers->get($name);
+
+                // Validated per provider, before the attempt: a missing key is a configuration error, and no
+                // number of hops fixes it.
+                $instance->headers();
+
+                return $attempt($name, $instance, $mergedConfig);
+            } catch (MacroLLMException | \RuntimeException $e) {
+                if (count($chain) === 1 || !FailoverPolicy::isFailoverable($e)) {
+                    throw $e;
+                }
+
+                $causes[$name] = $e;
+            }
+        }
+
+        throw ProviderFailoverException::exhausted($chain, $causes);
+    }
+
+    /**
+     * The providers to try, in order, for a request: the primary followed by its configured fallbacks.
+     *
+     * @return list<string>
+     */
+    private function providerChain(string $primary): array
+    {
+        $configured = $this->config->provider($primary)?->fallback ?? [];
+
+        // A chain naming its own primary twice would retry the same provider, which is what `retries` is for. And a
+        // name that is not registered is dropped rather than attempted: a typo in a fallback list must not turn a
+        // working primary into a failure.
+        $chain = array_values(array_unique([$primary, ...$configured]));
+
+        return array_values(array_filter($chain, fn (string $name): bool => $this->providers->has($name)));
+    }
+
+    /**
+     * The chain for a streaming request: only providers that can actually stream it.
+     *
+     * @return list<string>
+     */
+    private function streamingChain(string $primary): array
+    {
+        return array_values(array_filter(
+            $this->providerChain($primary),
+            fn (string $name): bool => $this->providers->get($name)->supportsStreaming(),
+        ));
     }
 
     /**
