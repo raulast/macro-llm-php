@@ -32,12 +32,14 @@ final class HttpClientTest extends TestCase
      * @param  array<int, array{request: \Psr\Http\Message\RequestInterface, response?: mixed}>  &$history  Populated with each sent request
      * @param  int  $retries        Number of retry attempts (not counting the initial attempt)
      * @param  int  $retryDelayMs   Delay in ms between retries; use 0 in tests
+     * @param  int|null  $connectTimeout  Optional TCP connect bound; null omits the argument
      */
     private function makeClient(
         array $queue,
         array &$history = [],
         int $retries = 0,
         int $retryDelayMs = 0,
+        ?int $connectTimeout = null,
     ): HttpClient {
         $mock  = new MockHandler($queue);
         $stack = HandlerStack::create($mock);
@@ -50,6 +52,7 @@ final class HttpClientTest extends TestCase
             retries: $retries,
             retryDelayMs: $retryDelayMs,
             handler: $stack,
+            connectTimeout: $connectTimeout,
         );
     }
 
@@ -99,6 +102,101 @@ final class HttpClientTest extends TestCase
         );
 
         $this->assertInstanceOf(HttpClient::class, $client);
+    }
+
+    // ---------------------------------------------------------------------------
+    // HC-1 / HC-8 — the opt-in TCP connect bound (append-only, conditional key)
+    // ---------------------------------------------------------------------------
+
+    /**
+     * HC-1, the change's central negative assertion. An omitted connect bound MUST leave the
+     * Guzzle request options with no `connect_timeout` key at all — not `0`, not `null`, not a
+     * placeholder. `assertArrayNotHasKey` is deliberate: `$options['connect_timeout'] ?? null`
+     * cannot distinguish an absent key from a present key carrying null, and the second is
+     * exactly the silent behaviour change this change must not introduce. Since every other
+     * construction site in the package omits the argument, this assertion is also the
+     * mechanism-level proof of HC-10's "only the MCP client opts into a connect bound".
+     */
+    public function testOmittedConnectTimeoutAddsNoConnectTimeoutRequestOption(): void
+    {
+        $history = [];
+
+        $this->makeClient([new Response(200, [], '{}')], history: $history)
+            ->post('/completions', ['model' => 'test']);
+
+        $this->assertCount(1, $history);
+        $this->assertArrayNotHasKey(
+            'connect_timeout',
+            $history[0]['options'],
+            'an omitted $connectTimeout must not put any connect_timeout key into the request options',
+        );
+    }
+
+    /** HC-1. A supplied bound is forwarded verbatim and reaches the Guzzle request options. */
+    public function testSuppliedConnectTimeoutReachesTheGuzzleRequestOptions(): void
+    {
+        $history = [];
+
+        $this->makeClient([new Response(200, [], '{}')], history: $history, connectTimeout: 10)
+            ->post('/completions', ['model' => 'test']);
+
+        $this->assertCount(1, $history);
+        $this->assertArrayHasKey('connect_timeout', $history[0]['options']);
+        $this->assertSame(10, $history[0]['options']['connect_timeout']);
+        // The pre-existing keys are unaffected by the added one (HC-1 keeps base_uri/timeout/headers).
+        $this->assertSame(5, $history[0]['options']['timeout']);
+    }
+
+    /**
+     * HC-1 + HC-8. The positive append-only shape pin that replaces the retired reflection pin
+     * (MCPC-11). Asserting the full ordered name list — not merely the count — is what makes a
+     * reorder (the breaking change HC-8 forbids) detectable, which the retired
+     * `assertCount(6, …)` + `assertNotContains(…)` pair could not do in either direction.
+     */
+    public function testConstructorAppendsConnectTimeoutWithoutReordering(): void
+    {
+        $parameters = (new \ReflectionClass(HttpClient::class))->getConstructor()->getParameters();
+
+        $this->assertCount(7, $parameters);
+        $this->assertSame(
+            ['baseUrl', 'headers', 'timeout', 'retries', 'retryDelayMs', 'handler', 'connectTimeout'],
+            array_map(static fn(\ReflectionParameter $parameter): string => $parameter->getName(), $parameters),
+            'the connect bound must be appended last: no parameter added, removed or reordered',
+        );
+
+        $connectTimeout = $parameters[6];
+        $type = $connectTimeout->getType();
+
+        $this->assertTrue($connectTimeout->isOptional());
+        $this->assertNull($connectTimeout->getDefaultValue(), 'null is how the bound is omitted');
+        $this->assertInstanceOf(\ReflectionNamedType::class, $type);
+        $this->assertSame('int', $type->getName());
+        $this->assertTrue($type->allowsNull(), 'the bound must stay nullable, or omitting it becomes impossible');
+    }
+
+    /**
+     * HC-8. A six-argument positional caller still reaches `$handler` with its sixth argument —
+     * the behavioural counterpart of the reflection pin above, and the direct mutation detector
+     * for "the connect bound was inserted before the handler seam": that mistake makes this test
+     * fail with a TypeError instead of silently remapping the sixth positional argument.
+     *
+     * GREEN before the implementation by construction: this is a regression guard, not a RED test.
+     */
+    public function testSixArgumentPositionalConstructorKeepsTheHandlerInPositionSix(): void
+    {
+        $body = json_encode(['ok' => true]);
+        $mock = new MockHandler([new Response(200, [], $body)]);
+
+        $client = new HttpClient(
+            'http://test.example',
+            ['Content-Type' => 'application/json'],
+            5,
+            0,
+            0,
+            HandlerStack::create($mock),
+        );
+
+        $this->assertSame(['ok' => true], $client->post('/completions', ['model' => 'test']));
     }
 
     // ---------------------------------------------------------------------------

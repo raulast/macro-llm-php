@@ -17,13 +17,23 @@ use MacroLLM\Tool\ToolDefinition;
  *
  * HTTP traffic goes through {@see HttpClient} and no framework facade, so the class works in
  * a non-Laravel install. The optional handler-stack factory is an @internal test seam and is
- * never set by production callers. Accepted latency regression: the previous transport capped
- * the TCP connect at 10 s while Guzzle's connect_timeout defaults to 0 (unbounded), so a
- * black-holed host now fails at the 30-second request timeout instead (MCPC-11).
+ * never set by production callers.
+ *
+ * Both request sites pass their transport values explicitly rather than inheriting them from an
+ * HttpClient default: the 30-second total request timeout, `retries: 0`, and a 10-second TCP
+ * connect bound (MCPC-9, MCPC-10, MCPC-11). The connect bound restores the parity the previous
+ * transport provided; its 10-second value is the recorded parity target, not a measurement. The
+ * bound is fixed and non-configurable in this change, and MCP remains the only consumer that
+ * opts into one.
  */
 final class MCPClient
 {
     private const TIMEOUT = 30;
+    /**
+     * MCP's TCP connect bound. `10` is the parity target recorded by MCPC-11 (documented
+     * history, not a measurement) and is passed explicitly at both call sites.
+     */
+    private const CONNECT_TIMEOUT = 10;
 
     /** @var array<string, array{url: string, auth: ?string}> */
     private array $servers = [];
@@ -60,6 +70,8 @@ final class MCPClient
             // the base URL and append a trailing slash (MCPC-3).
             // `retries` is the literal 0, never HttpClient's default, so a future default
             // change cannot silently arm retries for MCP traffic (MCPC-9).
+            // `connectTimeout` is likewise passed explicitly, never left to HttpClient's default,
+            // so MCP keeps its 10-second TCP connect bound whatever that default becomes (MCPC-11).
             $data = (new HttpClient(
                 baseUrl: $url,
                 headers: $this->buildHeaders($auth),
@@ -67,6 +79,7 @@ final class MCPClient
                 retries: 0,
                 retryDelayMs: 500,
                 handler: $handler,
+                connectTimeout: self::CONNECT_TIMEOUT,
             ))->post($url, [
                 'jsonrpc' => '2.0',
                 'id' => 1,
@@ -107,6 +120,8 @@ final class MCPClient
             // Absolute URL as both base and path: post('') would append a trailing slash (MCPC-3).
             // `retries` is the literal 0: a retried tools/call can execute a non-idempotent
             // action twice, and the default must not be able to arm retries for MCP (MCPC-9).
+            // Same explicit bound as the discovery site: the two sites are edited independently
+            // and MCPC-11 requires both (MCPC-10).
             $data = (new HttpClient(
                 baseUrl: $server['url'],
                 headers: $this->buildHeaders($server['auth']),
@@ -114,6 +129,7 @@ final class MCPClient
                 retries: 0,
                 retryDelayMs: 500,
                 handler: $handler,
+                connectTimeout: self::CONNECT_TIMEOUT,
             ))->post($server['url'], [
                 'jsonrpc' => '2.0',
                 'id' => 1,

@@ -13,7 +13,6 @@ use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use MacroLLM\Exception\MCPConnectionException;
 use MacroLLM\Exception\MCPToolCallException;
-use MacroLLM\Http\HttpClient;
 use MacroLLM\Mcp\MCPClient;
 use MacroLLM\Registry\ToolRegistry;
 use MacroLLM\Tests\TestCase;
@@ -279,6 +278,46 @@ final class MCPClientTest extends TestCase
         $this->assertSame(30, $history[0]['options']['timeout'] ?? null);
     }
 
+    // ── MCPC-10 + MCPC-11 — both fixed bound values, per site ───────────────
+
+    /**
+     * MCPC-10 + MCPC-11. The discovery site carries the 30-second total timeout and the
+     * 10-second TCP connect bound. The bound is asserted at the *recorded request options*,
+     * which is the only offline-observable form of a connect bound — and it is simultaneously
+     * the mutation detector for the inheritance failure: if `connectTimeout:` were dropped here,
+     * HttpClient would add no key at all and this assertion would fail.
+     */
+    public function test_discovery_request_carries_both_fixed_bound_values(): void
+    {
+        [$client, $history] = $this->makeClient([$this->discovery([$this->readFileTool()])]);
+
+        $client->connect('filesystem', self::URL);
+
+        $this->assertCount(1, $history);
+        $this->assertSame(30, $history[0]['options']['timeout'] ?? null);
+        $this->assertSame(10, $history[0]['options']['connect_timeout'] ?? null);
+    }
+
+    /**
+     * MCPC-10 + MCPC-11. The tool-call site is asserted independently of the discovery site,
+     * because the two construction sites are edited separately and one may be changed without
+     * the other — a single updated site would leave half the regression in place.
+     */
+    public function test_tool_call_request_carries_both_fixed_bound_values(): void
+    {
+        [$client, $history, $tools] = $this->makeClient([
+            $this->discovery([$this->readFileTool()]),
+            $this->toolResult(['ok' => true]),
+        ]);
+
+        $client->connect('filesystem', self::URL);
+        $this->invokeReadFile($tools, ['path' => '/etc/hosts']);
+
+        $this->assertCount(2, $history);
+        $this->assertSame(30, $history[1]['options']['timeout'] ?? null);
+        $this->assertSame(10, $history[1]['options']['connect_timeout'] ?? null);
+    }
+
     // ── MCPC-5 + MCPC-6 + MCPC-9 — exception contract and classification ─────
 
     /** MCPC-5 + MCPC-6 + MCPC-9. A failing discovery status is a connection failure, and only one request is sent. */
@@ -409,7 +448,7 @@ final class MCPClientTest extends TestCase
         $this->assertNull($returned);
     }
 
-    // ── MCPC-13 + MCPC-11 — boundary and freeze pins ────────────────────────
+    // ── MCPC-13 — boundary pin ─────────────────────────────────────────────
 
     /** MCPC-13. The class is illuminate-free: all traffic goes through MacroLLM\Http\HttpClient. */
     public function test_client_has_no_illuminate_reference(): void
@@ -418,22 +457,5 @@ final class MCPClientTest extends TestCase
 
         $this->assertIsString($source);
         $this->assertStringNotContainsStringIgnoringCase('illuminate', $source);
-    }
-
-    /**
-     * MCPC-11. HttpClient's constructor contract is frozen: no parameter was added to
-     * compensate for the lost 10-second connect bound. Kept because HttpClientTest.php
-     * pins behaviour only (null handler, five-argument call, injected handler) and never
-     * reflects on the constructor shape.
-     */
-    public function test_http_client_constructor_is_not_extended(): void
-    {
-        $parameters = (new \ReflectionClass(HttpClient::class))->getConstructor()->getParameters();
-
-        $this->assertCount(6, $parameters);
-        $this->assertNotContains(
-            'connect_timeout',
-            array_map(static fn(\ReflectionParameter $parameter): string => $parameter->getName(), $parameters),
-        );
     }
 }

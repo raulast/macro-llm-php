@@ -20,6 +20,13 @@ final class HttpClient
         private readonly int $retries = 0,
         private readonly int $retryDelayMs = 500,
         ?callable $handler = null,
+        // Opt-in TCP connect bound (HC-1). Appended AFTER the handler seam so every existing
+        // positional argument keeps its meaning (HC-8). The key is added only when a bound was
+        // supplied: an omitted bound leaves the Guzzle config — and therefore the request
+        // options — with no `connect_timeout` key at all, which is what keeps every existing
+        // caller identical to the pre-change client. A supplied value is forwarded verbatim;
+        // no clamping and no derivation from $timeout (HC-1).
+        ?int $connectTimeout = null,
     ) {
         $config = [
             'base_uri' => rtrim($baseUrl, '/') . '/',
@@ -28,6 +35,9 @@ final class HttpClient
         ];
         if ($handler !== null) {
             $config['handler'] = $handler;
+        }
+        if ($connectTimeout !== null) {
+            $config['connect_timeout'] = $connectTimeout;
         }
         $this->client = new Client($config);
     }
