@@ -84,9 +84,45 @@ try {
 The root schema must describe an object. Only local pointers (`#/$defs/...`, `#/definitions/...`) are
 resolved; external and remote references are refused, not fetched.
 
-**Status: the providers do not call the normalizer for you yet.** As of this version you normalize the
-schema yourself before handing it to `ResponseFormat::jsonSchema()`. Provider-side wiring is the next step
-of the same work, and this paragraph is what will change when it lands — not a claim that it already works.
+## What each provider family emits
+
+| Family | Emission | Schema handling |
+| --- | --- | --- |
+| OpenAI-compatible (10 providers) | `response_format.json_schema` with `name`, `schema`, `strict` | normalized for `SchemaDialect::OpenAi`; when `strict: true`, completed for strict mode |
+| Gemini | `generationConfig.responseMimeType` + `responseJsonSchema` | normalized for `SchemaDialect::Gemini` |
+| Anthropic | **refused by name** — see below | — |
+| Cohere | **refused by name** — see below | — |
+
+`ResponseFormat::json()` (the schema-less JSON mode) emits the family's JSON mode without a schema, on both
+families above.
+
+**They disagree about what a schema means, and the package refuses rather than pretending otherwise.** A
+provider that cannot honour a schema raises `SchemaException`, so you learn at the call site instead of
+receiving prose back from an endpoint you believed was constrained. Until Anthropic and Cohere emission lands,
+those two families refuse structured output explicitly.
+
+**Annotating `strict`.** Only OpenAI-compatible providers have the flag. `strict: true` also completes the
+schema, because strict mode requires `additionalProperties: false` on every object and every property listed in
+`required` — strict mode has no notion of an optional field, so optionality is expressed as a nullable type. If
+you need your schema to travel byte-identical, pass `strict: false`.
+
+## Status: partial, and stated as such
+
+Emission works for **OpenAI-compatible and Gemini**. Two things are still missing and this section is what
+changes when they land:
+
+- **Anthropic and Cohere refuse.** They raise `SchemaException` rather than silently returning prose.
+- **The streaming and agent paths do not carry `responseFormat` yet**, so structured output applies to a direct
+  `chat()` call. (`2.4` of the same work.)
+
+You can always normalize by hand, which is also the way to target a dialect before it is wired up:
+
+```php
+use MacroLLM\Schema\SchemaDialect;
+use MacroLLM\Schema\SchemaNormalizer;
+
+$schema = (new SchemaNormalizer())->normalize($mySchema, SchemaDialect::Gemini);
+```
 
 ## Example: a schema that survives both dialects
 

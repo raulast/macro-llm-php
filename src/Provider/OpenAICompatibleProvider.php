@@ -10,9 +10,12 @@ use MacroLLM\Message\FinishReason;
 use MacroLLM\Message\InternalMessage;
 use MacroLLM\Message\InternalRequest;
 use MacroLLM\Message\InternalResponse;
+use MacroLLM\Message\ResponseFormat;
 use MacroLLM\Message\Role;
 use MacroLLM\Message\StreamChunk;
 use MacroLLM\Message\Usage;
+use MacroLLM\Schema\SchemaDialect;
+use MacroLLM\Schema\SchemaNormalizer;
 use MacroLLM\Tool\ToolCall;
 use MacroLLM\Tool\ToolDefinition;
 
@@ -52,24 +55,54 @@ class OpenAICompatibleProvider extends AbstractProvider
             $payload['tools'] = $this->mapTools($request->tools);
         }
 
-        // F-10: Structured output / response format
+        // F-10: Structured output / response format.
+        //
+        // The schema is normalized HERE, which is what turns the package's provider-interchangeability claim
+        // into something true: an unsupported keyword now fails with a path instead of travelling to the
+        // provider as a 400 the caller cannot explain.
         if ($request->responseFormat !== null) {
-            $fmt = $request->responseFormat;
-            if ($fmt->type === 'json_schema' && $fmt->name !== null && $fmt->schema !== null) {
-                $payload['response_format'] = [
-                    'type'        => 'json_schema',
-                    'json_schema' => [
-                        'name'   => $fmt->name,
-                        'schema' => $fmt->schema,
-                        'strict' => $fmt->strict,
-                    ],
-                ];
-            } else {
-                $payload['response_format'] = ['type' => $fmt->type];
-            }
+            $payload['response_format'] = $this->mapResponseFormat($request->responseFormat);
         }
 
         return $payload;
+    }
+
+    /**
+     * Maps a ResponseFormat to this provider family's wire shape.
+     *
+     * @return array<string, mixed>
+     */
+    private function mapResponseFormat(ResponseFormat $format): array
+    {
+        if ($format->type === 'json_object') {
+            return ['type' => 'json_object'];
+        }
+
+        // `type === 'json_schema'` implies BOTH a name and a schema: ResponseFormat's constructor is private
+        // and jsonSchema() requires them. The invariant is stated rather than assumed, because the previous
+        // shape of this method silently emitted a half-formed `response_format` when they were absent.
+        if ($format->name === null || $format->schema === null) {
+            throw new \LogicException('A json_schema ResponseFormat must carry both a name and a schema.');
+        }
+
+        $normalizer = new SchemaNormalizer();
+        $schema = $normalizer->normalize($format->schema, SchemaDialect::OpenAi);
+
+        // `strict: true` is a request for the shape strict mode requires, and completing it is a named
+        // operation rather than a side effect. It strengthens the contract, so it is not the silent
+        // degradation the rest of this engine refuses.
+        if ($format->strict) {
+            $schema = $normalizer->completeForStrictMode($schema);
+        }
+
+        return [
+            'type'        => 'json_schema',
+            'json_schema' => [
+                'name'   => $format->name,
+                'schema' => $schema,
+                'strict' => $format->strict,
+            ],
+        ];
     }
 
     public function toResponse(array $providerResponse): InternalResponse

@@ -9,6 +9,7 @@ use MacroLLM\Contract\EmbeddingProviderInterface;
 use MacroLLM\Contract\ImageProviderInterface;
 use MacroLLM\Contract\AudioProviderInterface;
 use MacroLLM\Contract\RerankingProviderInterface;
+use MacroLLM\Exception\SchemaException;
 use MacroLLM\Message\ContentPart;
 use MacroLLM\Message\FinishReason;
 use MacroLLM\Message\InternalMessage;
@@ -172,21 +173,70 @@ class GeminiProviderTest extends TestCase
         $this->assertSame('get_weather', $fn['name']);
     }
 
-    // ── toPayload: silently ignores ResponseFormat ──────────────────────────
+    // ── toPayload: structured output emission ──────────────────────────────
 
-    public function testToPayloadIgnoresResponseFormat(): void
+    public function testToPayloadEmitsAJsonSchemaThroughTheJsonSchemaChannel(): void
     {
         $provider = $this->makeProvider();
-        $format = ResponseFormat::jsonSchema('person', ['type' => 'object']);
+        $format = ResponseFormat::jsonSchema('person', [
+            'type' => 'object',
+            'properties' => ['name' => ['type' => 'string']],
+            'required' => ['name'],
+        ]);
         $request = new InternalRequest(
             messages: [InternalMessage::user('Extract person')],
             responseFormat: $format,
         );
 
-        $payload = $provider->toPayload($request);
+        $config = $provider->toPayload($request)['generationConfig'];
 
-        // Gemini does not support response_format in the same way — must NOT be in payload
-        $this->assertArrayNotHasKey('response_format', $payload);
+        $this->assertSame('application/json', $config['responseMimeType']);
+        $this->assertSame('object', $config['responseJsonSchema']['type']);
+        $this->assertSame(['type' => 'string'], $config['responseJsonSchema']['properties']['name']);
+    }
+
+    /** `json()` is the schema-less JSON mode: a MIME type, and no schema to enforce. */
+    public function testToPayloadEmitsJsonModeWithoutASchema(): void
+    {
+        $provider = $this->makeProvider();
+        $request = new InternalRequest(
+            messages: [InternalMessage::user('Give me JSON')],
+            responseFormat: ResponseFormat::json(),
+        );
+
+        $config = $provider->toPayload($request)['generationConfig'];
+
+        $this->assertSame('application/json', $config['responseMimeType']);
+        $this->assertArrayNotHasKey('responseJsonSchema', $config);
+    }
+
+    /**
+     * The behaviour this replaces was `testToPayloadIgnoresResponseFormat`, which pinned the silent drop as
+     * expected. Ignoring was the defect: the package promises the same request shape on every provider.
+     */
+    public function testToPayloadRefusesASchemaKeywordTheDialectDoesNotSupport(): void
+    {
+        $provider = $this->makeProvider();
+        $request = new InternalRequest(
+            messages: [InternalMessage::user('Extract')],
+            responseFormat: ResponseFormat::jsonSchema('x', [
+                'type' => 'object',
+                'properties' => ['a' => ['type' => 'string', 'minLength' => 3]],
+            ]),
+        );
+
+        $this->expectException(SchemaException::class);
+        $this->expectExceptionMessageMatches('/minLength/');
+
+        $provider->toPayload($request);
+    }
+
+    public function testToPayloadWithoutAResponseFormatCarriesNoGenerationConfig(): void
+    {
+        $provider = $this->makeProvider();
+        $request = new InternalRequest(messages: [InternalMessage::user('Hi')]);
+
+        $this->assertArrayNotHasKey('generationConfig', $provider->toPayload($request));
     }
 
     // ── toPayload: multimodal ──────────────────────────────────────────────

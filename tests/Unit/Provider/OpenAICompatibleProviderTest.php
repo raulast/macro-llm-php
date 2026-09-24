@@ -10,6 +10,7 @@ use MacroLLM\Contract\EmbeddingProviderInterface;
 use MacroLLM\Contract\ImageProviderInterface;
 use MacroLLM\Contract\ProviderInterface;
 use MacroLLM\Contract\RerankingProviderInterface;
+use MacroLLM\Exception\SchemaException;
 use MacroLLM\Message\ContentPart;
 use MacroLLM\Message\FinishReason;
 use MacroLLM\Message\InternalMessage;
@@ -272,6 +273,91 @@ class OpenAICompatibleProviderTest extends TestCase
         $this->assertSame('json_schema', $payload['response_format']['type']);
         $this->assertSame('person', $payload['response_format']['json_schema']['name']);
         $this->assertArrayHasKey('schema', $payload['response_format']['json_schema']);
+    }
+
+    /** The emitted schema goes through the dialect engine, so a droppable annotation is dropped. */
+    public function testJsonSchemaEmissionNormalizesTheSchemaForTheDialect(): void
+    {
+        $provider = $this->makeProvider();
+        $format = ResponseFormat::jsonSchema('person', [
+            'type' => 'object',
+            '$id' => 'https://example.test/person',
+            'properties' => ['name' => ['type' => 'string', 'description' => 'The name']],
+            'required' => ['name'],
+        ]);
+
+        $payload = $provider->toPayload(new InternalRequest(
+            messages: [InternalMessage::user('Extract person')],
+            responseFormat: $format,
+        ));
+
+        $schema = $payload['response_format']['json_schema']['schema'];
+
+        $this->assertArrayNotHasKey('$id', $schema);
+        $this->assertSame('The name', $schema['properties']['name']['description']);
+    }
+
+    /**
+     * The change that makes the promise real: an unsupported keyword now fails here, loudly and with a path,
+     * instead of travelling to the provider as a 400 the caller cannot explain.
+     */
+    public function testJsonSchemaEmissionRefusesAKeywordTheDialectDoesNotSupport(): void
+    {
+        $provider = $this->makeProvider();
+        $format = ResponseFormat::jsonSchema('person', [
+            'type' => 'object',
+            'properties' => ['name' => ['type' => 'string', 'allOf' => [['type' => 'string']]]],
+        ]);
+
+        $this->expectException(SchemaException::class);
+        $this->expectExceptionMessageMatches('/allOf/');
+
+        $provider->toPayload(new InternalRequest(
+            messages: [InternalMessage::user('Extract person')],
+            responseFormat: $format,
+        ));
+    }
+
+    /**
+     * `strict: true` is a request for the shape strict mode requires. Completing it is a named operation, not a
+     * side effect, and it strengthens rather than weakens the contract.
+     */
+    public function testStrictEmissionCompletesTheSchemaForStrictMode(): void
+    {
+        $provider = $this->makeProvider();
+        $format = ResponseFormat::jsonSchema('person', [
+            'type' => 'object',
+            'properties' => ['name' => ['type' => 'string']],
+        ], strict: true);
+
+        $payload = $provider->toPayload(new InternalRequest(
+            messages: [InternalMessage::user('Extract person')],
+            responseFormat: $format,
+        ));
+
+        $this->assertTrue($payload['response_format']['json_schema']['strict']);
+
+        $schema = $payload['response_format']['json_schema']['schema'];
+        $this->assertFalse($schema['additionalProperties']);
+        $this->assertSame(['name'], $schema['required']);
+    }
+
+    public function testNonStrictEmissionLeavesTheCallersSchemaAlone(): void
+    {
+        $provider = $this->makeProvider();
+        $format = ResponseFormat::jsonSchema('person', [
+            'type' => 'object',
+            'properties' => ['name' => ['type' => 'string']],
+        ], strict: false);
+
+        $payload = $provider->toPayload(new InternalRequest(
+            messages: [InternalMessage::user('Extract person')],
+            responseFormat: $format,
+        ));
+
+        $this->assertFalse($payload['response_format']['json_schema']['strict']);
+        $this->assertArrayNotHasKey('additionalProperties', $payload['response_format']['json_schema']['schema']);
+        $this->assertArrayNotHasKey('required', $payload['response_format']['json_schema']['schema']);
     }
 
     // ── toPayload: tool definitions ────────────────────────────────────────

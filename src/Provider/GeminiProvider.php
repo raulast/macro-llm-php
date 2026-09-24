@@ -12,9 +12,12 @@ use MacroLLM\Message\FinishReason;
 use MacroLLM\Message\InternalMessage;
 use MacroLLM\Message\InternalRequest;
 use MacroLLM\Message\InternalResponse;
+use MacroLLM\Message\ResponseFormat;
 use MacroLLM\Message\Role;
 use MacroLLM\Message\StreamChunk;
 use MacroLLM\Message\Usage;
+use MacroLLM\Schema\SchemaDialect;
+use MacroLLM\Schema\SchemaNormalizer;
 use MacroLLM\Tool\ToolCall;
 use MacroLLM\Tool\ToolDefinition;
 
@@ -79,7 +82,41 @@ final class GeminiProvider extends AbstractProvider implements
             ];
         }
 
+        if ($request->responseFormat !== null) {
+            $payload['generationConfig'] = $this->mapResponseFormat($request->responseFormat);
+        }
+
         return $payload;
+    }
+
+    /**
+     * Gemini's structured-output shape.
+     *
+     * `responseMimeType: application/json` is documented as required alongside a schema, and it is also the
+     * whole of JSON mode when no schema is given.
+     *
+     * The schema travels on the **JSON-Schema channel**, chosen by the API reference rather than by
+     * preference: the reference's own enumeration of supported properties is exactly what
+     * `SchemaDialect::Gemini` models. Worth knowing before changing this: the reference marks the legacy
+     * `responseSchema` and `_responseJsonSchema` fields deprecated in favour of `responseFormat`, and the older
+     * OpenAPI-subset `Schema` proto is a DIFFERENT field list (it carries `nullable` and `minProperties`, and
+     * names its references `ref`/`defs` without the `$`).
+     *
+     * `strict` is deliberately not forwarded: Gemini has no equivalent flag, and its structured output is
+     * enforced by the schema itself, so there is nothing for a flag to change.
+     *
+     * @return array<string, mixed>
+     */
+    private function mapResponseFormat(ResponseFormat $format): array
+    {
+        $config = ['responseMimeType' => 'application/json'];
+
+        if ($format->schema !== null) {
+            $config['responseJsonSchema'] = (new SchemaNormalizer())
+                ->normalize($format->schema, SchemaDialect::Gemini);
+        }
+
+        return $config;
     }
 
     public function toResponse(array $providerResponse): InternalResponse

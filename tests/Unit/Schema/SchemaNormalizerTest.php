@@ -226,6 +226,120 @@ final class SchemaNormalizerTest extends TestCase
         }
     }
 
+    // ── Structured output: normalization, strict completion, refusal ───────
+
+    /**
+     * Strict mode has no notion of an optional field: OpenAI requires every object to set
+     * `additionalProperties: false` and every property to appear in `required`. Both additions STRENGTHEN the
+     * contract, which is why completing them is not the silent degradation the engine otherwise refuses.
+     */
+    public function testStrictModeCompletionAddsTheTwoThingsStrictModeRequires(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'properties' => [
+                'name' => ['type' => 'string'],
+                'age' => ['type' => 'integer'],
+            ],
+        ];
+
+        $completed = (new SchemaNormalizer())->completeForStrictMode($schema);
+
+        $this->assertFalse($completed['additionalProperties']);
+        $this->assertSame(['name', 'age'], $completed['required']);
+    }
+
+    public function testStrictModeCompletionReachesNestedObjectsAndArrays(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'properties' => [
+                'address' => [
+                    'type' => 'object',
+                    'properties' => ['city' => ['type' => 'string']],
+                ],
+                'tags' => [
+                    'type' => 'array',
+                    'items' => [
+                        'type' => 'object',
+                        'properties' => ['label' => ['type' => 'string']],
+                    ],
+                ],
+            ],
+        ];
+
+        $completed = (new SchemaNormalizer())->completeForStrictMode($schema);
+
+        $this->assertFalse($completed['properties']['address']['additionalProperties']);
+        $this->assertSame(['city'], $completed['properties']['address']['required']);
+        $this->assertFalse($completed['properties']['tags']['items']['additionalProperties']);
+        $this->assertSame(['label'], $completed['properties']['tags']['items']['required']);
+    }
+
+    public function testStrictModeCompletionKeepsAnExistingRequiredOrderAndAppendsTheRest(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'properties' => ['a' => ['type' => 'string'], 'b' => ['type' => 'string']],
+            'required' => ['b'],
+        ];
+
+        $completed = (new SchemaNormalizer())->completeForStrictMode($schema);
+
+        $this->assertSame(['b', 'a'], $completed['required'], "the caller's order is preserved, not replaced");
+    }
+
+    /**
+     * A schema-valued `additionalProperties` is an explicit choice the caller made; strict mode cannot honour
+     * it, so it is left alone rather than silently rewritten to `false`.
+     */
+    public function testStrictModeCompletionDoesNotOverwriteASchemaValuedAdditionalProperties(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'properties' => ['a' => ['type' => 'string']],
+            'additionalProperties' => ['type' => 'string'],
+        ];
+
+        $completed = (new SchemaNormalizer())->completeForStrictMode($schema);
+
+        $this->assertSame(['type' => 'string'], $completed['additionalProperties']);
+    }
+
+    public function testStrictModeCompletionAlsoReachesDefsAndCompositionBranches(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'properties' => ['value' => ['anyOf' => [['type' => 'object', 'properties' => ['x' => ['type' => 'string']]]]]],
+            '$defs' => ['thing' => ['type' => 'object', 'properties' => ['y' => ['type' => 'integer']]]],
+        ];
+
+        $completed = (new SchemaNormalizer())->completeForStrictMode($schema);
+
+        $this->assertSame(
+            ['x'],
+            $completed['properties']['value']['anyOf'][0]['required'],
+        );
+        $this->assertSame(['y'], $completed['$defs']['thing']['required']);
+    }
+
+    public function testNormalizationAndStrictCompletionCompose(): void
+    {
+        $normalizer = new SchemaNormalizer();
+
+        $schema = $normalizer->normalize([
+            'type' => 'object',
+            'title' => 'Person',
+            'properties' => ['name' => ['type' => 'string']],
+        ], SchemaDialect::OpenAi);
+
+        $schema = $normalizer->completeForStrictMode($schema);
+
+        $this->assertSame('Person', $schema['title']);
+        $this->assertFalse($schema['additionalProperties']);
+        $this->assertSame(['name'], $schema['required']);
+    }
+
     // ── Shape and keyword hygiene ───────────────────────────────────────────
 
     public function test_a_non_object_root_is_rejected(): void

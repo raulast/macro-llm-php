@@ -162,6 +162,77 @@ final class SchemaNormalizer
     }
 
     /**
+     * Completes a schema for OpenAI's `strict: true`.
+     *
+     * This is a NAMED operation rather than a side effect of {@see normalize()}, because it rewrites the
+     * caller's schema. Strict mode has two hard requirements, both documented by OpenAI: every object must set
+     * `additionalProperties: false`, and every property must be listed in `required` — strict mode has no notion
+     * of an optional field, so genuine optionality is expressed as a nullable type instead.
+     *
+     * Both additions **strengthen** the contract: `additionalProperties: false` forbids keys the caller never
+     * declared, and completing `required` is precisely what `strict: true` means. They therefore do not violate
+     * the rule against silent degradation, and the operation is named and tested so they are never invisible.
+     *
+     * A schema-valued `additionalProperties` is left untouched: it is an explicit choice strict mode cannot
+     * honour, and rewriting it to `false` would replace the caller's meaning.
+     *
+     * @param  array<string, mixed>  $schema
+     * @return array<string, mixed>
+     */
+    public function completeForStrictMode(array $schema): array
+    {
+        $properties = $schema['properties'] ?? null;
+
+        if (is_array($properties)) {
+            $declared = $schema['required'] ?? null;
+            $existing = is_array($declared) ? array_values(array_filter($declared, 'is_string')) : [];
+
+            // The caller's order is preserved and only the missing names are appended, rather than replacing
+            // the list outright.
+            $schema['required'] = array_values(array_unique([...$existing, ...array_keys($properties)]));
+
+            if (!is_array($schema['additionalProperties'] ?? null)) {
+                $schema['additionalProperties'] = false;
+            }
+        }
+
+        foreach ($schema as $keyword => $value) {
+            if (!is_array($value)) {
+                continue;
+            }
+
+            if (in_array($keyword, self::SCHEMA_MAPS, true)) {
+                foreach ($value as $name => $subSchema) {
+                    if (is_array($subSchema)) {
+                        $schema[$keyword][$name] = $this->completeForStrictMode($subSchema);
+                    }
+                }
+
+                continue;
+            }
+
+            if (in_array($keyword, self::SCHEMA_LISTS, true)) {
+                foreach (array_values($value) as $index => $subSchema) {
+                    if (is_array($subSchema)) {
+                        $schema[$keyword][$index] = $this->completeForStrictMode($subSchema);
+                    }
+                }
+
+                continue;
+            }
+
+            $isSingle = in_array($keyword, self::SCHEMA_SINGLE, true)
+                || in_array($keyword, self::SCHEMA_BOOL_OR_SCHEMA, true);
+
+            if ($isSingle) {
+                $schema[$keyword] = $this->completeForStrictMode($value);
+            }
+        }
+
+        return $schema;
+    }
+
+    /**
      * Resolves a local JSON Pointer (`#/...`) against the root schema. External references are not resolved.
      *
      * @param  array<string, mixed>  $root
