@@ -10,6 +10,7 @@ use MacroLLM\Message\InternalMessage;
 use MacroLLM\Message\InternalRequest;
 use MacroLLM\Testing\FakeGateway;
 use MacroLLM\Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * The test doubles a consumer uses. What matters here is that a fake is usable WITHOUT a network, that a real
@@ -131,12 +132,50 @@ final class FakeGatewayTest extends TestCase
     public function test_a_provider_without_a_template_is_refused(): void
     {
         try {
-            FakeGateway::for('gemini');
+            // Audio-only: it has no chat surface, so it has no chat template and needs none.
+            FakeGateway::for('elevenlabs');
             $this->fail('Expected a FakeGatewayException.');
         } catch (FakeGatewayException $e) {
-            $this->assertStringContainsString('gemini', $e->getMessage());
+            $this->assertStringContainsString('elevenlabs', $e->getMessage());
             $this->assertStringContainsString('no wire template', $e->getMessage());
         }
+    }
+
+    // ── The other three families ────────────────────────────────────────────
+
+    /** @return array<string, array{string}> */
+    public static function familyProvider(): array
+    {
+        return [
+            'anthropic' => ['anthropic'],
+            'the anthropic-compatible provider' => ['opencode-zen-go-anthropic'],
+            'gemini' => ['gemini'],
+            'cohere' => ['cohere'],
+        ];
+    }
+
+    #[DataProvider('familyProvider')]
+    public function test_every_family_answers_text_in_the_shape_its_adapter_parses(string $provider): void
+    {
+        $fake = FakeGateway::for($provider)->respondingWith('Hello from ' . $provider);
+
+        $response = $fake->client()->chat($this->request());
+
+        $this->assertSame('Hello from ' . $provider, $response->content, $provider);
+        $this->assertSame($provider, $response->providerName);
+    }
+
+    #[DataProvider('familyProvider')]
+    public function test_every_family_maps_a_tool_call_with_its_arguments(string $provider): void
+    {
+        $fake = FakeGateway::for($provider)
+            ->respondingWithToolCall('get_weather', ['location' => 'Rosario'], 'call_9');
+
+        $response = $fake->client()->chat($this->request());
+
+        $this->assertTrue($response->hasToolCalls(), $provider);
+        $this->assertSame('get_weather', $response->toolCalls[0]->name, $provider);
+        $this->assertSame(['location' => 'Rosario'], $response->toolCalls[0]->arguments, $provider);
     }
 
     public function test_a_provider_the_package_does_not_know_is_refused(): void

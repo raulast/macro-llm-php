@@ -201,6 +201,12 @@ final class FakeGateway
             'mistral' => OpenAiCompatibleWireTemplate::class,
             'deepseek' => OpenAiCompatibleWireTemplate::class,
             'xai' => OpenAiCompatibleWireTemplate::class,
+            // Two providers speak the Messages API, not just `anthropic`.
+            'anthropic' => AnthropicWireTemplate::class,
+            'opencode-zen-go-anthropic' => AnthropicWireTemplate::class,
+            'gemini' => GeminiWireTemplate::class,
+            'cohere' => CohereWireTemplate::class,
+            // `elevenlabs` is audio-only: it has no chat surface, so it has no chat template and needs none.
         ];
     }
 

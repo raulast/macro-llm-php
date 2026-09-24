@@ -55,9 +55,16 @@ $fake = FakeGateway::for('openai')->failingWith(503);
   building and response mapping you would otherwise be re-testing are exercised. Only the network is replaced.
 - **Streaming is not framed.** `stream()` fetches through the transport rather than through the provider, so a fake
   cannot intercept SSE events. The package's own suite covers the framing; a fake is for testing *your* code.
-- **Provider families without a wire template are refused**, not approximated. Today that is OpenAI-compatible (which
-  covers ten of the fifteen providers). Faking `gemini`, `anthropic` or `cohere` raises `FakeGatewayException` telling
-  you so, because a guessed payload would fail inside the adapter instead of in your test.
+- **Provider families without a wire template are refused**, not approximated. Templates cover **every family with a
+  chat surface**: OpenAI-compatible (ten of the fifteen providers), Anthropic — including the Anthropic-compatible
+  provider — Gemini and Cohere. Faking a provider with no chat surface, such as the audio-only one, raises
+  `FakeGatewayException` telling you so, because a guessed payload would fail inside the adapter instead of in your
+  test.
+
+The templates are derived from the package's own hand-authored fixtures, so each one and its adapter agree by
+construction rather than by hope. They differ in ways worth knowing when reading an assertion: Anthropic puts tool
+arguments in a real array, while the OpenAI-compatible and Cohere families hide them in a JSON string; Gemini reports
+`STOP` even when the response carries a function call.
 
 ## The test-framework question
 

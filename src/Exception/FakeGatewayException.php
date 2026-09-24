@@ -38,9 +38,9 @@ final class FakeGatewayException extends MacroLLMException
     public static function noTemplateFor(string $provider): self
     {
         return new self(sprintf(
-            'There is no wire template for "%s" yet, so a fake cannot answer in the shape its adapter parses. '
-            . 'Supported families so far: OpenAI-compatible. Anthropic, Gemini and Cohere are next; until then, fake '
-            . 'this provider at the HTTP layer yourself with the shape from its adapter.',
+            'There is no wire template for "%s", so a fake cannot answer in the shape its adapter parses. Templates '
+            . 'exist for the OpenAI-compatible family, Anthropic (and the Anthropic-compatible provider), Gemini and '
+            . 'Cohere. A provider with no chat surface — an audio-only one, for instance — has none and needs none.',
             $provider,
         ));
     }

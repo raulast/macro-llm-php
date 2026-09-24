@@ -66,6 +66,9 @@ other container: bind the client in your container and inject it — no Laravel 
 | `FailoverPolicy` | `MacroLLM\Provider\FailoverPolicy` | Classifies which provider failures justify trying another provider |
 | `FakeGateway` | `MacroLLM\Testing\FakeGateway` | Test double: a whole provider answered from a queue, with no network |
 | `OpenAiCompatibleWireTemplate` | `MacroLLM\Testing\OpenAiCompatibleWireTemplate` | The wire shape the ten OpenAI-compatible providers share, used by the fake |
+| `AnthropicWireTemplate` | `MacroLLM\Testing\AnthropicWireTemplate` | The Messages API shape: content blocks, a `tool_use` block, arguments as a real array |
+| `GeminiWireTemplate` | `MacroLLM\Testing\GeminiWireTemplate` | The `generateContent` shape: `parts`, a `functionCall` part, `STOP` even for a call |
+| `CohereWireTemplate` | `MacroLLM\Testing\CohereWireTemplate` | The Chat v2 shape: content blocks, `message.tool_calls`, usage under `billed_units` |
 
 ## When to use which reference
 
