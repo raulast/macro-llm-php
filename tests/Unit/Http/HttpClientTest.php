@@ -98,6 +98,190 @@ final class HttpClientTest extends TestCase
     }
 
     // ---------------------------------------------------------------------------
+    // HC-12 — multipart and unparsed-body requests over the same transport
+    // ---------------------------------------------------------------------------
+
+    /**
+     * Reads a request body the way a transport does: from wherever it is, to the end.
+     *
+     * Deliberately NOT `(string) $request->getBody()`. Casting a PSR-7 stream to string seeks it back
+     * to 0 first (`Stream::__toString()`), which REWINDS the multipart file handles as a side effect —
+     * the exact defect the retry test exists to detect. Using that cast as the instrument repairs the
+     * bug under test and makes the test unfailable; it was measured, not assumed. This reader drains
+     * without seeking.
+     *
+     * @param  list<string>  $bodies
+     * @return callable(\Psr\Http\Message\RequestInterface): Response
+     */
+    private function captureBodyThenRespond(array &$bodies, int $status, string $body = ''): callable
+    {
+        return function ($request) use (&$bodies, $status, $body): Response {
+            $stream = $request->getBody();
+            $captured = '';
+
+            while (! $stream->eof()) {
+                $chunk = $stream->read(8192);
+
+                if ($chunk === '') {
+                    break;
+                }
+
+                $captured .= $chunk;
+            }
+
+            $bodies[] = $captured;
+
+            return new Response($status, [], $body);
+        };
+    }
+
+    /** A temporary file with known contents. The caller deletes it. */
+    private function tempFile(string $contents): string
+    {
+        $path = tempnam(sys_get_temp_dir(), 'macro-llm-http-');
+        file_put_contents($path, $contents);
+
+        return $path;
+    }
+
+    public function testMultipartRequestSendsTheDeclaredParts(): void
+    {
+        $bodies = [];
+        $client = $this->makeClient([$this->captureBodyThenRespond($bodies, 200, '{"text":"hola"}')]);
+        $path = $this->tempFile('AUDIO-BYTES');
+
+        try {
+            $data = $client->postMultipart('/audio/transcriptions', [
+                ['name' => 'model', 'contents' => 'whisper-1'],
+                ['name' => 'file', 'contents' => fopen($path, 'r'), 'filename' => 'sample.mp3'],
+            ]);
+        } finally {
+            unlink($path);
+        }
+
+        $this->assertSame(['text' => 'hola'], $data);
+        $this->assertCount(1, $bodies);
+        $this->assertStringContainsString('name="model"', $bodies[0]);
+        $this->assertStringContainsString('whisper-1', $bodies[0]);
+        $this->assertStringContainsString('filename="sample.mp3"', $bodies[0]);
+        $this->assertStringContainsString('AUDIO-BYTES', $bodies[0]);
+    }
+
+    /**
+     * HC-12 — the trap this method exists for.
+     *
+     * Building a multipart body consumes the file stream. A retry that re-sent the same parts would
+     * upload an EMPTY file part and still report success; the failure is silent, which is what makes
+     * it worth its own test. Guzzle does not help: `MultipartStream::addElement()` calls
+     * `Utils::streamFor()` on whatever `contents` holds, with no callable branch and no rewind.
+     */
+    public function testMultipartRetrySendsTheWholeFileAgainInsteadOfAnEmptyPart(): void
+    {
+        $bodies = [];
+        $client = $this->makeClient(
+            [
+                $this->captureBodyThenRespond($bodies, 503),
+                $this->captureBodyThenRespond($bodies, 200, '{"text":"ok"}'),
+            ],
+            retries: 1,
+        );
+        $path = $this->tempFile('AUDIO-BYTES');
+
+        try {
+            $client->postMultipart('/audio/transcriptions', [
+                ['name' => 'model', 'contents' => 'whisper-1'],
+                ['name' => 'file', 'contents' => fopen($path, 'r'), 'filename' => 'sample.mp3'],
+            ]);
+        } finally {
+            unlink($path);
+        }
+
+        $this->assertCount(2, $bodies, 'a 503 must be retried once');
+        $this->assertStringContainsString('AUDIO-BYTES', $bodies[0], 'the first attempt carries the file');
+        $this->assertStringContainsString(
+            'AUDIO-BYTES',
+            $bodies[1],
+            'the retry must carry the WHOLE file: a consumed stream sends an empty part and still succeeds',
+        );
+        $this->assertStringContainsString('filename="sample.mp3"', $bodies[1]);
+    }
+
+    public function testClosurePartContentsAreResolvedAgainOnEveryAttempt(): void
+    {
+        $bodies = [];
+        $calls = 0;
+        $client = $this->makeClient(
+            [
+                $this->captureBodyThenRespond($bodies, 503),
+                $this->captureBodyThenRespond($bodies, 200, '{"text":"ok"}'),
+            ],
+            retries: 1,
+        );
+        $path = $this->tempFile('FRESH-BYTES');
+
+        try {
+            $client->postMultipart('/audio/transcriptions', [
+                [
+                    'name' => 'file',
+                    'contents' => function () use ($path, &$calls) {
+                        $calls++;
+
+                        return fopen($path, 'r');
+                    },
+                    'filename' => 'sample.mp3',
+                ],
+            ]);
+        } finally {
+            unlink($path);
+        }
+
+        $this->assertSame(2, $calls, 'the Closure must run once per attempt, not once per call');
+        $this->assertStringContainsString('FRESH-BYTES', $bodies[0]);
+        $this->assertStringContainsString('FRESH-BYTES', $bodies[1]);
+    }
+
+    /**
+     * A string that happens to name a function must be SENT, not called: `is_callable('trim')` is
+     * true, so matching by callable-ness would silently replace the field value with trim()'s output.
+     */
+    public function testStringPartContentsThatNamesAFunctionAreSentVerbatim(): void
+    {
+        $bodies = [];
+        $client = $this->makeClient([$this->captureBodyThenRespond($bodies, 200, '{}')]);
+
+        $client->postMultipart('/upload', [['name' => 'value', 'contents' => 'trim']]);
+
+        $this->assertStringContainsString('trim', $bodies[0]);
+    }
+
+    public function testRawResponseBodyIsReturnedUnparsed(): void
+    {
+        $audio = "\x49\x44\x33\x00\x01" . 'mp3-bytes';
+        $client = $this->makeClient([new Response(200, ['Content-Type' => 'audio/mpeg'], $audio)]);
+
+        $this->assertSame($audio, $client->postRaw('/audio/speech', ['input' => 'hi']));
+    }
+
+    public function testRawResponseKeepsTheSharedRetryAndFailureContract(): void
+    {
+        $retried = $this->makeClient(
+            [new Response(503, [], ''), new Response(200, [], 'BYTES')],
+            retries: 1,
+        );
+        $this->assertSame('BYTES', $retried->postRaw('/audio/speech', ['input' => 'hi']));
+
+        $failing = $this->makeClient([new Response(400, [], '{"error":"bad"}')]);
+
+        try {
+            $failing->postRaw('/audio/speech', ['input' => 'hi']);
+            $this->fail('Expected a ProviderRequestException.');
+        } catch (ProviderRequestException $e) {
+            $this->assertSame(400, $e->statusCode);
+            $this->assertSame('http://test.example', $e->endpoint);
+        }
+    }
+
+    // ---------------------------------------------------------------------------
     // Seam integration: null handler and callable handler
     // ---------------------------------------------------------------------------
 
