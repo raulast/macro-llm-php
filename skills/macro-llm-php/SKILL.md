@@ -61,6 +61,7 @@ other container: bind the client in your container and inject it — no Laravel 
 | `ToolRegistry` | `MacroLLM\Registry\ToolRegistry` | Registry returned by `$llm->tools()`; holds the callables tools call into |
 | `StreamChunk` | `MacroLLM\Message\StreamChunk` | One stream delta plus the `finished` flag and terminal `response` |
 | `SchemaDialect` | `MacroLLM\Schema\SchemaDialect` | What a provider accepts: `OpenAi` and `Gemini` |
+| `SchemaNormalizer` | `MacroLLM\Schema\SchemaNormalizer` | Rewrites a JSON Schema for a provider dialect, or refuses it by name |
 
 ## When to use which reference
 
@@ -73,6 +74,7 @@ other container: bind the client in your container and inject it — no Laravel 
 | `recipes-agents.md` | Agent and skill recipes: system prompts, tool loops, multi-step agents, skills, and how agents compose. |
 | `recipes-advanced.md` | Advanced patterns: multi-agent orchestration, MCP client/server wiring, structured output, embeddings, vision, memory. |
 | `exceptions.md` | The exception hierarchy and which failure path to catch for HTTP, provider, configuration, and tool errors. |
+| `structured-output.md` | JSON Schema normalization: which keywords each provider dialect accepts, and why an unsupported one is refused instead of dropped. |
 | `invariants.md` | Non-negotiable package behavior and contracts you must not break when extending or debugging. |
 
 ## Inline recipes
