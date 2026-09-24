@@ -220,7 +220,7 @@ final class ProviderConfigTest extends TestCase
             );
         }
 
-        $this->assertCount(7, $reflection->getProperties());
+        $this->assertCount(8, $reflection->getProperties());
     }
 
     // ── Documented boundary ─────────────────────────────────────────────────

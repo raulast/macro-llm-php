@@ -90,6 +90,12 @@ final class Config
                 retries: isset($config['retries']) ? (int) $config['retries'] : null,
                 extraHeaders: $config['extra_headers'] ?? [],
                 retryDelayMs: isset($config['retry_delay_ms']) ? (int) $config['retry_delay_ms'] : null,
+                // Only strings survive: a malformed entry would otherwise travel as a non-string into provider
+                // resolution and fail somewhere far away from the configuration that caused it.
+                fallback: array_values(array_filter(
+                    is_array($config['fallback'] ?? null) ? $config['fallback'] : [],
+                    'is_string',
+                )),
             );
         }
 

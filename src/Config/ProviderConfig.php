@@ -24,6 +24,10 @@ final class ProviderConfig
     public readonly array $extraHeaders;
 
     /** @param array<string, string> $extraHeaders */
+    /**
+     * @param string[] $fallback Provider names to try, in order, when this one fails in a way another provider
+     *                         might survive. Empty by default: no hop happens unless the caller asks for one.
+     */
     public function __construct(
         ?string $apiKey,
         string $defaultModel,
@@ -32,6 +36,7 @@ final class ProviderConfig
         public readonly ?int $retries = null,
         array $extraHeaders = [],
         public readonly ?int $retryDelayMs = null,
+        public readonly array $fallback = [],
     ) {
         $this->apiKey       = EnvResolver::resolveNullable($apiKey);
         $this->defaultModel = EnvResolver::resolve($defaultModel);
