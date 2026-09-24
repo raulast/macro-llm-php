@@ -31,7 +31,7 @@ SchemaDialect::Gemini;   // Google Gemini
 | --- | --- |
 | `supportedKeywords(): array` | Keywords this dialect accepts, and that are therefore kept |
 | `droppedKeywords(): array` | Annotation-only keywords dropped silently, because no validation outcome changes |
-| `inlinesReferences(): bool` | Whether `$ref` must be inlined because the dialect cannot receive one |
+| `inlinesReferences(): bool` | Whether `$ref` is inlined by the normalizer rather than passed through |
 | `allowsRecursion(): bool` | Whether the dialect can express a recursive schema at all |
 
 **OpenAI accepts references and recursion**, so `$ref` and `$defs` are passed through untouched: inlining
@@ -41,8 +41,22 @@ documented unsupported composition is `allOf`, `not`, `dependentRequired`, `depe
 documentation never demonstrates it, so the safe direction is to refuse with a message that points at
 `anyOf`, which is supported.
 
-**Gemini cannot receive `$ref`**, so references are inlined and `$defs` is removed. Because inlining a cycle
-can never terminate, a recursive schema is refused by name rather than looping.
+**Gemini accepts a JSON-Schema channel whose supported keyword list is enumerated by the API reference**:
+`$id`, `$defs`, `$ref`, `$anchor`, `type`, `format`, `title`, `description`, `enum`, `items`, `prefixItems`,
+`minItems`, `maxItems`, `minimum`, `maximum`, `anyOf`, `oneOf` (interpreted as `anyOf`), `properties`,
+`additionalProperties`, `required`, plus the non-standard `propertyOrdering`. Anything outside that list —
+`allOf`, `not`, `const`, `uniqueItems`, `minLength`, `maxLength`, `pattern`, `minProperties` — is refused by
+name.
+
+Even though `$ref` is supported there, this engine **inlines** references for Gemini. The reference states that
+cyclic references are "unrolled to a limited degree, and only within non-required properties"; inlining sidesteps
+that limitation for every schema that is not actually recursive, and refuses real recursion by name. That is the
+better worst case.
+
+Two things worth knowing about that channel: the reference marks it deprecated in favour of `responseFormat`,
+and the older OpenAPI-subset `Schema` proto is a **different** field list — it carries `nullable` and
+`minProperties`, and it names its references `ref`/`defs` without the `$`. This engine models the JSON-Schema
+channel, because that is what it emits. A model pinned to the OpenAPI subset would need its own dialect case.
 
 ## `SchemaNormalizer`
 

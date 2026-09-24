@@ -30,7 +30,7 @@ final class SchemaNormalizer
     private const SCHEMA_MAPS = ['properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas'];
 
     /** Keyword → list of schemas. */
-    private const SCHEMA_LISTS = ['anyOf', 'allOf', 'oneOf'];
+    private const SCHEMA_LISTS = ['anyOf', 'allOf', 'oneOf', 'prefixItems'];
 
     /** Keyword → a single schema. */
     private const SCHEMA_SINGLE = ['items', 'not', 'if', 'then', 'else'];

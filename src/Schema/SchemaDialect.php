@@ -15,9 +15,27 @@ namespace MacroLLM\Schema;
  *  - **OpenAi** — read from the structured-outputs guide: `$defs` + `$ref` are supported *including
  *    recursive schemas*, `anyOf` is supported, and the unsupported composition list is stated explicitly
  *    as `allOf`, `not`, `dependentRequired`, `dependentSchemas`, `if`, `then`, `else`.
- *  - **Gemini** — the conservative `responseSchema` subset (a documented subset of OpenAPI 3.0), taken from
- *    a secondary source rather than the reference itself: **provisional, verified against the Gemini Schema
- *    reference in unit 2.2**, where any correction lands with a test.
+ *  - **Gemini** — **verified** against the Gemini API reference, which enumerates the properties its
+ *    JSON-Schema channel supports: `$id`, `$defs`, `$ref`, `$anchor`, `type`, `format`, `title`,
+ *    `description`, `enum`, `items`, `prefixItems`, `minItems`, `maxItems`, `minimum`, `maximum`, `anyOf`,
+ *    `oneOf` (interpreted as `anyOf`), `properties`, `additionalProperties`, `required`, plus the
+ *    non-standard `propertyOrdering`. **The verification corrected this list in EIGHT places.** The
+ *    provisional list this class first shipped refused `additionalProperties`, `$ref` and `oneOf` by
+ *    mistake, and allowed `minLength`, `maxLength`, `pattern`, `nullable` and `default` by mistake — every
+ *    one of those eight is now pinned by a test. That is the concrete cost of guessing an allow-list, and
+ *    the reason the doctrine here is verify-first.
+ *
+ *  - **The other Gemini channel.** The reference marks `responseSchema` and `_responseJsonSchema` deprecated
+ *    in favour of `responseFormat`, and the OpenAPI-subset `Schema` proto is a *different* field list from
+ *    the JSON-Schema one (it carries `nullable`, `minProperties`, `ref`/`defs` without the `$`). This enum
+ *    models the **JSON-Schema channel**, because that is what the normalizer emits. A caller pinned to an
+ *    older model that only accepts the OpenAPI subset needs its own dialect case; that is recorded as an
+ *    open follow-up rather than papered over.
+ *
+ *  - **Why `$ref` is not in the kept list.** Gemini accepts `$ref`, but the normalizer inlines references
+ *    for it: the provider "unrolls cyclic references to a limited degree, and only within non-required
+ *    properties". Inlining removes that trap entirely for non-recursive schemas, and refuses recursion by
+ *    name for the rest — a better worst case than sending a cycle the provider may mishandle.
  *
  * `oneOf` is treated as unsupported for OpenAI **pending verification**: the guide's unsupported list does
  * not name it and no example uses it, so the safe direction is to reject it with a message that points at
@@ -29,7 +47,11 @@ enum SchemaDialect: string
     case Gemini = 'gemini';
 
     /**
-     * Keywords this dialect accepts, and that MUST therefore be kept.
+     * Keywords this dialect accepts and that the normalizer therefore **keeps** in the emitted schema.
+     *
+     * A keyword the provider accepts but the normalizer transforms away (such as `$ref` where references are
+     * inlined) deliberately does not appear here: this list describes the emitted shape, not the provider's
+     * full capability.
      *
      * @return list<string>
      */
@@ -53,13 +75,13 @@ enum SchemaDialect: string
                 'minItems', 'maxItems', 'uniqueItems', 'patternProperties',
             ],
             self::Gemini => [
-                // The responseSchema field list
-                'type', 'properties', 'required', 'items', 'enum', 'nullable',
-                'format', 'description', 'title',
-                'minimum', 'maximum', 'minItems', 'maxItems', 'minLength', 'maxLength', 'pattern',
-                'default', 'propertyOrdering',
-                // Gemini documents anyOf for conditional schemas
-                'anyOf',
+                // Verified against the Gemini API reference's own enumeration of the properties its
+                // JSON-Schema channel supports.
+                'type', 'format', 'title', 'description',
+                'enum', 'items', 'prefixItems', 'minItems', 'maxItems', 'minimum', 'maximum',
+                'anyOf', 'oneOf',
+                'properties', 'additionalProperties', 'required',
+                'propertyOrdering',
             ],
         };
     }
@@ -76,7 +98,7 @@ enum SchemaDialect: string
     {
         return [
             '$schema', '$id', '$comment',
-            'examples', 'example',
+            'examples', 'example', 'default',
             'readOnly', 'writeOnly', 'deprecated',
         ];
     }
@@ -85,7 +107,9 @@ enum SchemaDialect: string
      * Whether a `$ref` has to be inlined because the dialect cannot receive one.
      *
      * OpenAI accepts references, so inlining there would be a defect rather than a service: it would break
-     * every recursive schema the provider explicitly supports.
+     * every recursive schema the provider explicitly supports. Gemini also accepts them, and they are still
+     * inlined — the provider only unrolls cyclic references inside non-required properties, and inlining
+     * sidesteps that limitation for every schema that is not actually recursive.
      */
     public function inlinesReferences(): bool
     {

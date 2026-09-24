@@ -18,8 +18,9 @@ use MacroLLM\Tests\TestCase;
  *  - OpenAI: read from the structured-outputs guide. `$defs` + `$ref` (including RECURSIVE schemas) are
  *    supported, `anyOf` is supported, and the unsupported composition list is explicit: `allOf`, `not`,
  *    `dependentRequired`, `dependentSchemas`, `if`, `then`, `else`.
- *  - Gemini: the conservative `responseSchema` subset. Documented via secondary source only — the exact
- *    list is verified against the Gemini Schema reference in unit 2.2 and corrected there with tests.
+ *  - Gemini: **verified** against the Gemini API reference, which enumerates the properties its JSON-Schema
+ *    channel supports. The verification corrected the provisional list in EIGHT places, and every one of
+ *    those corrections is pinned by a test.
  */
 final class SchemaNormalizerTest extends TestCase
 {
@@ -123,8 +124,9 @@ final class SchemaNormalizerTest extends TestCase
     {
         $schema = [
             'type' => 'object',
-            'additionalProperties' => false,
-            'properties' => ['name' => ['type' => 'string']],
+            'properties' => [
+                'name' => ['type' => 'string', 'allOf' => [['minLength' => 1]]],
+            ],
         ];
 
         try {
@@ -132,8 +134,55 @@ final class SchemaNormalizerTest extends TestCase
             $this->fail('Expected a SchemaException.');
         } catch (SchemaException $e) {
             $this->assertSame('unsupported_keyword', $e->reason);
-            $this->assertSame('additionalProperties', $e->keyword);
-            $this->assertSame('$.additionalProperties', $e->path);
+            $this->assertSame('allOf', $e->keyword);
+            $this->assertSame('$.properties.name.allOf', $e->path);
+        }
+    }
+
+    /**
+     * The user-visible consequence of the allow-list verification: this schema was refused before it and is
+     * accepted now, because the Gemini reference supports `additionalProperties` and the provisional list
+     * did not. Pinned end-to-end rather than only on the enum.
+     */
+    public function test_gemini_accepts_additional_properties_now_that_the_list_is_verified(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'additionalProperties' => false,
+            'properties' => ['name' => ['type' => 'string']],
+            'required' => ['name'],
+        ];
+
+        $result = $this->normalizer()->normalize($schema, SchemaDialect::Gemini);
+
+        $this->assertFalse($result['additionalProperties']);
+        $this->assertSame(['name'], $result['required']);
+    }
+
+    /**
+     * `oneOf` is the other half of the same correction, and it must be walked as a container: a violation
+     * nested inside a branch has to be found, not skipped.
+     */
+    public function test_gemini_accepts_one_of_and_still_walks_its_branches(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'properties' => [
+                'value' => [
+                    'oneOf' => [
+                        ['type' => 'string'],
+                        ['type' => 'object', 'properties' => ['x' => ['type' => 'string', 'const' => 'a']]],
+                    ],
+                ],
+            ],
+        ];
+
+        try {
+            $this->normalizer()->normalize($schema, SchemaDialect::Gemini);
+            $this->fail('Expected a SchemaException: `const` is unsupported, even inside a oneOf branch.');
+        } catch (SchemaException $e) {
+            $this->assertSame('const', $e->keyword);
+            $this->assertSame('$.properties.value.oneOf.1.properties.x.const', $e->path);
         }
     }
 

@@ -16,6 +16,12 @@ use MacroLLM\Tests\TestCase;
  * These tests pin the lists themselves, including the invariant that matters most — **no dropped keyword
  * may be a validation keyword**, because dropping one would weaken the contract silently. They also pin
  * the failure type, whose whole job is to make a refusal actionable.
+ *
+ * The Gemini half of these tests is the record of a correction: the allow-list was first written from a
+ * secondary source, then verified against the API reference, and **eight entries were wrong**. The pairs
+ * `test_gemini_supports_the_two_keywords_the_provisional_list_refused_by_mistake` and
+ * `test_gemini_refuses_the_string_keywords_the_provisional_list_allowed_by_mistake` exist so the
+ * correction cannot silently regress, and so the cost of guessing an allow-list stays visible.
  */
 final class SchemaDialectTest extends TestCase
 {
@@ -58,6 +64,16 @@ final class SchemaDialectTest extends TestCase
             SchemaDialect::Gemini->droppedKeywords(),
             'the droppable set is annotation-only and provider-independent; a divergence here needs a reason',
         );
+    }
+
+    /**
+     * `default` is annotation-only by the JSON Schema spec — the Gemini reference itself says it "is intended
+     * for documentation generators and doesn't affect validation" — so it is dropped rather than refused.
+     */
+    public function test_default_is_droppable_because_it_affects_no_validation(): void
+    {
+        $this->assertContains('default', SchemaDialect::OpenAi->droppedKeywords());
+        $this->assertContains('default', SchemaDialect::Gemini->droppedKeywords());
     }
 
     // ── OpenAI ──────────────────────────────────────────────────────────────
@@ -106,22 +122,66 @@ final class SchemaDialectTest extends TestCase
 
     // ── Gemini ──────────────────────────────────────────────────────────────
 
-    public function test_gemini_inlines_references_and_cannot_express_recursion(): void
+    public function test_gemini_inlines_references_deliberately_and_cannot_express_recursion(): void
     {
         $dialect = SchemaDialect::Gemini;
 
-        $this->assertTrue($dialect->inlinesReferences());
+        $this->assertTrue(
+            $dialect->inlinesReferences(),
+            'the provider only unrolls cyclic references inside non-required properties, so inlining avoids '
+            . 'that trap entirely for every non-recursive schema',
+        );
         $this->assertFalse($dialect->allowsRecursion(), 'inlining a cycle cannot terminate');
-        $this->assertNotContains('$ref', $dialect->supportedKeywords());
+        $this->assertNotContains(
+            '$ref',
+            $dialect->supportedKeywords(),
+            'the provider accepts $ref, but the normalizer inlines it, so it is never KEPT in the emitted schema',
+        );
         $this->assertNotContains('$defs', $dialect->supportedKeywords());
     }
 
-    public function test_gemini_supports_its_documented_field_list(): void
+    /**
+     * The allow-list verified against the Gemini API reference's own enumeration of the properties its
+     * JSON-Schema channel supports. This is the list the provisional one was corrected INTO.
+     */
+    public function test_gemini_supports_the_json_schema_properties_the_api_reference_enumerates(): void
     {
         $dialect = SchemaDialect::Gemini;
 
-        foreach (['type', 'properties', 'required', 'items', 'enum', 'nullable', 'anyOf', 'propertyOrdering', 'description'] as $keyword) {
-            $this->assertContains($keyword, $dialect->supportedKeywords());
+        $verified = [
+            'type', 'format', 'title', 'description', 'enum',
+            'items', 'prefixItems', 'minItems', 'maxItems', 'minimum', 'maximum',
+            'anyOf', 'oneOf', 'properties', 'additionalProperties', 'required',
+            'propertyOrdering',
+        ];
+
+        foreach ($verified as $keyword) {
+            $this->assertContains($keyword, $dialect->supportedKeywords(), $keyword);
+        }
+    }
+
+    /**
+     * The two properties the provisional list got backwards, pinned so the correction cannot silently
+     * regress: the reference supports BOTH.
+     */
+    public function test_gemini_supports_the_two_keywords_the_provisional_list_refused_by_mistake(): void
+    {
+        $dialect = SchemaDialect::Gemini;
+
+        $this->assertContains('additionalProperties', $dialect->supportedKeywords());
+        $this->assertContains('oneOf', $dialect->supportedKeywords());
+    }
+
+    /**
+     * The other half of the correction: these were provisionally ALLOWED and are not in the reference's
+     * list, so they would have earned a provider error.
+     */
+    public function test_gemini_refuses_the_string_keywords_the_provisional_list_allowed_by_mistake(): void
+    {
+        $dialect = SchemaDialect::Gemini;
+
+        foreach (['minLength', 'maxLength', 'pattern', 'nullable', 'default'] as $keyword) {
+            $this->assertNotContains($keyword, $dialect->supportedKeywords(), $keyword);
         }
     }
 
@@ -129,8 +189,15 @@ final class SchemaDialectTest extends TestCase
     {
         $dialect = SchemaDialect::Gemini;
 
-        foreach (['additionalProperties', 'patternProperties', 'allOf', 'oneOf', 'not', 'const', 'uniqueItems'] as $keyword) {
-            $this->assertNotContains($keyword, $dialect->supportedKeywords());
+        $unsupported = [
+            'patternProperties', 'allOf', 'not', 'const', 'uniqueItems',
+            'multipleOf', 'exclusiveMinimum', 'exclusiveMaximum',
+            'if', 'then', 'else', 'dependentRequired', 'dependentSchemas',
+            'minProperties', 'maxProperties',
+        ];
+
+        foreach ($unsupported as $keyword) {
+            $this->assertNotContains($keyword, $dialect->supportedKeywords(), $keyword);
         }
     }
 
