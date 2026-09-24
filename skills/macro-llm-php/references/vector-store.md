@@ -44,6 +44,31 @@ foreach ($matches as $match) {
 Adding an id twice **replaces** it, so a document can be re-indexed without deleting it first. Removing an id that is
 not there is a no-op, for the same reason.
 
+## Letting an Agent search it
+
+A store alone does not make RAG expressible: the model has to be able to ASK for the documents. `SimilaritySearchTool`
+is that tool, and it introduces no new concepts — it is an ordinary `ToolDefinition`, offered through the same array
+and executed by the same loop.
+
+```php
+use MacroLLM\Tool\SimilaritySearchTool;
+
+$tool = SimilaritySearchTool::using(
+    store: $store,
+    embed: fn (string $query): array => $llm->embed(new EmbeddingRequest([$query]), 'openai')->embeddings[0],
+);
+
+$llm->agent(new AgentConfig(tools: [$tool]))->run('What does the handbook say about expenses?');
+```
+
+The embedding step is a callable rather than a client, which keeps the tool testable without a provider and usable with
+an embedding model this package does not drive.
+
+Its declared schema is ordinary JSON Schema, so the Agent validates a model's arguments against it before the tool runs
+— the same guarantee every other tool gets. Asking for more documents than the tool allows is **clamped** rather than
+honoured, so a model cannot request the whole index by guessing a large number, and **no matches is a legitimate
+answer**: the tool returns an empty list so the model can rephrase or conclude, where an exception would end the turn.
+
 ## The guards, and why each exists
 
 Every one of these prevents a wrong ANSWER rather than an error, which is why the store refuses instead of coping:

@@ -67,6 +67,7 @@ other container: bind the client in your container and inject it — no Laravel 
 | `FakeGateway` | `MacroLLM\Testing\FakeGateway` | Test double: a whole provider answered from a queue, with no network |
 | `InMemoryVectorStore` | `MacroLLM\VectorStore\InMemoryVectorStore` | Reference vector store: cosine similarity, no dependencies, in memory |
 | `VectorMatch` | `MacroLLM\VectorStore\VectorMatch` | One retrieval hit: `id`, `score` and the stored metadata |
+| `SimilaritySearchTool` | `MacroLLM\Tool\SimilaritySearchTool` | Builds the tool an Agent calls to search an indexed store |
 | `OpenAiCompatibleWireTemplate` | `MacroLLM\Testing\OpenAiCompatibleWireTemplate` | The wire shape the ten OpenAI-compatible providers share, used by the fake |
 | `AnthropicWireTemplate` | `MacroLLM\Testing\AnthropicWireTemplate` | The Messages API shape: content blocks, a `tool_use` block, arguments as a real array |
 | `GeminiWireTemplate` | `MacroLLM\Testing\GeminiWireTemplate` | The `generateContent` shape: `parts`, a `functionCall` part, `STOP` even for a call |
