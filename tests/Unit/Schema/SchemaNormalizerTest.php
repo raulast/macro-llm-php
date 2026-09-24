@@ -340,6 +340,217 @@ final class SchemaNormalizerTest extends TestCase
         $this->assertSame(['name'], $schema['required']);
     }
 
+    // ── `$ref` siblings: legal in JSON Schema, and they all apply ──────────
+
+    /**
+     * The defect this section exists for. `{$ref: X, k: v}` means "matches X AND k is v", so replacing the node
+     * with X silently DELETED a constraint the caller wrote — while still producing a schema the provider
+     * accepted. Same failure mode as the rest of the engine, committed by the engine itself.
+     */
+    public function test_a_validation_sibling_survives_inlining(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'properties' => ['name' => ['$ref' => '#/$defs/name', 'format' => 'date']],
+            '$defs' => ['name' => ['type' => 'string']],
+        ];
+
+        $result = $this->normalizer()->normalize($schema, SchemaDialect::Gemini);
+
+        $this->assertSame('string', $result['properties']['name']['type']);
+        $this->assertSame('date', $result['properties']['name']['format'], 'the sibling constraint must survive');
+    }
+
+    /** `required` from both sides apply, so the union loses nothing. */
+    public function test_a_required_sibling_is_unioned_with_the_definitions_required(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'properties' => ['a' => ['$ref' => '#/$defs/a', 'required' => ['b']]],
+            '$defs' => [
+                'a' => [
+                    'type' => 'object',
+                    'properties' => ['a' => ['type' => 'string'], 'b' => ['type' => 'string']],
+                    'required' => ['a'],
+                ],
+            ],
+        ];
+
+        $result = $this->normalizer()->normalize($schema, SchemaDialect::Gemini);
+
+        $this->assertSame(['a', 'b'], $result['properties']['a']['required']);
+    }
+
+    /** Two disjoint `properties` maps both apply, so they merge key by key. */
+    public function test_a_properties_sibling_is_merged_key_by_key(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'properties' => [
+                'address' => ['$ref' => '#/$defs/address', 'properties' => ['zip' => ['type' => 'string']]],
+            ],
+            '$defs' => [
+                'address' => [
+                    'type' => 'object',
+                    'properties' => ['city' => ['type' => 'string']],
+                ],
+            ],
+        ];
+
+        $result = $this->normalizer()->normalize($schema, SchemaDialect::Gemini);
+
+        $this->assertSame('string', $result['properties']['address']['properties']['city']['type']);
+        $this->assertSame('string', $result['properties']['address']['properties']['zip']['type']);
+    }
+
+    /**
+     * The one case where merging would have to pick a winner. Refusing keeps the promise: no silent choice.
+     */
+    public function test_a_conflicting_sibling_keyword_is_refused_by_name(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'properties' => ['name' => ['$ref' => '#/$defs/name', 'format' => 'time']],
+            '$defs' => ['name' => ['type' => 'string', 'format' => 'date']],
+        ];
+
+        try {
+            $this->normalizer()->normalize($schema, SchemaDialect::Gemini);
+            $this->fail('Expected a SchemaException.');
+        } catch (SchemaException $e) {
+            $this->assertSame('conflicting_reference_sibling', $e->reason);
+            $this->assertSame('#/$defs/name', $e->reference);
+            $this->assertSame('format', $e->keyword);
+            $this->assertStringContainsString('format', $e->getMessage());
+        }
+    }
+
+    /** Two constraints on the SAME property name is the same ambiguity one level down. */
+    public function test_a_conflicting_property_name_is_refused(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'properties' => [
+                'address' => ['$ref' => '#/$defs/address', 'properties' => ['city' => ['type' => 'integer']]],
+            ],
+            '$defs' => [
+                'address' => [
+                    'type' => 'object',
+                    'properties' => ['city' => ['type' => 'string']],
+                ],
+            ],
+        ];
+
+        try {
+            $this->normalizer()->normalize($schema, SchemaDialect::Gemini);
+            $this->fail('Expected a SchemaException.');
+        } catch (SchemaException $e) {
+            $this->assertSame('conflicting_reference_sibling', $e->reason);
+            $this->assertSame('properties.city', $e->keyword);
+        }
+    }
+
+    /**
+     * Annotations have no validation outcome, so the use site wins: it is the more specific of the two, and
+     * refusing over a `description` would be pedantry.
+     */
+    public function test_an_annotation_sibling_wins_over_the_definitions_annotation(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'properties' => ['name' => ['$ref' => '#/$defs/name', 'description' => 'At the use site']],
+            '$defs' => ['name' => ['type' => 'string', 'description' => 'In the definition']],
+        ];
+
+        $result = $this->normalizer()->normalize($schema, SchemaDialect::Gemini);
+
+        $this->assertSame('At the use site', $result['properties']['name']['description']);
+    }
+
+    /** A sibling must go through the same classification as any other keyword, not around it. */
+    public function test_an_unsupported_sibling_keyword_is_still_refused(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'properties' => ['name' => ['$ref' => '#/$defs/name', 'allOf' => [['minLength' => 1]]]],
+            '$defs' => ['name' => ['type' => 'string']],
+        ];
+
+        try {
+            $this->normalizer()->normalize($schema, SchemaDialect::Gemini);
+            $this->fail('Expected a SchemaException.');
+        } catch (SchemaException $e) {
+            $this->assertSame('unsupported_keyword', $e->reason);
+            $this->assertSame('allOf', $e->keyword);
+        }
+    }
+
+    /** A droppable annotation beside a reference is dropped, not merged and not refused. */
+    public function test_a_dropped_annotation_sibling_is_dropped(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'properties' => ['name' => ['$ref' => '#/$defs/name', '$id' => 'https://example.test/x']],
+            '$defs' => ['name' => ['type' => 'string']],
+        ];
+
+        $result = $this->normalizer()->normalize($schema, SchemaDialect::Gemini);
+
+        $this->assertSame(['type' => 'string'], $result['properties']['name']);
+    }
+
+    /** Regression guard: a dialect that KEEPS references must see the node untouched, siblings included. */
+    public function test_openai_still_passes_the_reference_and_its_siblings_through(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'properties' => ['name' => ['$ref' => '#/$defs/name', 'minLength' => 5]],
+            '$defs' => ['name' => ['type' => 'string']],
+        ];
+
+        $result = $this->normalizer()->normalize($schema, SchemaDialect::OpenAi);
+
+        $this->assertSame(['$ref' => '#/$defs/name', 'minLength' => 5], $result['properties']['name']);
+    }
+    /**
+     * The companion hole to the one this unit fixes, closed before it could open.
+     *
+     * The walk only recurses into keywords it KNOWS hold a schema, so a schema-valued keyword that a dialect
+     * supports but the walk does not recognise would be passed through unwalked — and a violation nested inside it
+     * would escape silently, exactly the way the `$ref` sibling did.
+     *
+     * Measured before writing this: no dialect supports such a keyword today. That is a fact about the current
+     * lists, not a property of the code, so it is pinned rather than assumed — adding a container keyword to a
+     * dialect without teaching the walk about it now fails HERE instead of dropping constraints in production.
+     */
+    public function test_every_supported_keyword_is_either_a_container_or_a_known_scalar(): void
+    {
+        $containers = SchemaNormalizer::containerKeywords();
+
+        $scalars = [
+            'type', 'format', 'description', 'title', 'nullable', 'enum', 'const', 'pattern',
+            'default', 'example', 'propertyOrdering', 'required', '$ref', '$id', '$anchor',
+            'deprecated', 'readOnly', 'writeOnly',
+            'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf',
+            'minLength', 'maxLength', 'minItems', 'maxItems', 'uniqueItems',
+        ];
+
+        foreach (SchemaDialect::cases() as $dialect) {
+            foreach ($dialect->supportedKeywords() as $keyword) {
+                $this->assertTrue(
+                    in_array($keyword, $containers, true) || in_array($keyword, $scalars, true),
+                    sprintf(
+                        'Dialect "%s" supports "%s", but the normalizer classifies it as neither a container nor '
+                        . 'a known scalar. If its value can hold a schema, the walk would pass it through UNWALKED '
+                        . 'and a nested violation would escape silently.',
+                        $dialect->value,
+                        $keyword,
+                    ),
+                );
+            }
+        }
+    }
+
     // ── Shape and keyword hygiene ───────────────────────────────────────────
 
     public function test_a_non_object_root_is_rejected(): void

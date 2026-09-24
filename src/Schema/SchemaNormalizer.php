@@ -42,6 +42,25 @@ final class SchemaNormalizer
     private const REFERENCE_CONTAINERS = ['$defs', 'definitions'];
 
     /**
+     * Every keyword whose value is a schema, or holds one: what the walk recurses into.
+     *
+     * Public because this is the engine's own classification, and an invariant ABOUT it belongs in a test that
+     * reads it — not in a comment, and not in a text search. The grep that once "proved" one HTTP path was a
+     * heuristic; this is the honest form of the same idea.
+     *
+     * @return list<string>
+     */
+    public static function containerKeywords(): array
+    {
+        return [
+            ...self::SCHEMA_MAPS,
+            ...self::SCHEMA_LISTS,
+            ...self::SCHEMA_SINGLE,
+            ...self::SCHEMA_BOOL_OR_SCHEMA,
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>  $schema
      * @return array<string, mixed>
      * @throws SchemaException  when the schema cannot be expressed in the dialect
@@ -134,7 +153,19 @@ final class SchemaNormalizer
     }
 
     /**
-     * Replaces a `$ref` node with the schema it points at.
+     * Replaces a `$ref` node with the schema it points at, **keeping the node's other keywords**.
+     *
+     * JSON Schema 2020-12 allows siblings beside `$ref`, and all of them apply: `{$ref: X, minLength: 5}` means
+     * "matches X AND minLength 5". The first version of this method returned X alone, which silently DELETED the
+     * caller's constraint while still producing a schema the provider accepted — the exact failure this engine
+     * exists to prevent, committed by the engine itself. It was found by an independent reader, not by its tests.
+     *
+     * The merge rules are chosen so that no keyword is ever decided silently:
+     *  - `required`    both lists apply, so the result is their union;
+     *  - `properties`  the two maps merge key by key, and a property named on BOTH sides is refused, because two
+     *                  constraints on the same property would need an `allOf` to say what was meant;
+     *  - annotations   the use site wins: it is the more specific of the two, and no validation outcome is at stake;
+     *  - anything else a keyword defined on both sides is REFUSED by name, because merging would pick a winner.
      *
      * @param  array<string, mixed>  $schema
      * @return array<string, mixed>
@@ -158,7 +189,85 @@ final class SchemaNormalizer
             throw SchemaException::unresolvableReference($dialect, $referencePath, $reference);
         }
 
-        return $this->walk($target, $dialect, $path, $root, [...$inlining, $reference]);
+        $stack = [...$inlining, $reference];
+        $inlined = $this->walk($target, $dialect, $path, $root, $stack);
+
+        $siblings = $schema;
+        unset($siblings['$ref']);
+
+        foreach ($siblings as $keyword => $value) {
+            $keywordPath = $path . '.' . $keyword;
+
+            if (in_array($keyword, $dialect->droppedKeywords(), true)) {
+                continue;   // annotation-only: nothing to merge, and nothing lost
+            }
+
+            // A sibling goes through the SAME classification as any other keyword, never around it.
+            if (!in_array($keyword, $dialect->supportedKeywords(), true)) {
+                throw SchemaException::unsupportedKeyword($dialect, $keywordPath, $keyword);
+            }
+
+            $inlined = $this->mergeSibling(
+                $inlined,
+                $keyword,
+                $this->normalizeValue($keyword, $value, $dialect, $keywordPath, $root, $stack),
+                $dialect,
+                $keywordPath,
+                $reference,
+            );
+        }
+
+        return $inlined;
+    }
+
+    /**
+     * @param  array<string, mixed>  $inlined
+     * @return array<string, mixed>
+     */
+    private function mergeSibling(
+        array $inlined,
+        string $keyword,
+        mixed $sibling,
+        SchemaDialect $dialect,
+        string $keywordPath,
+        string $reference,
+    ): array {
+        if (!array_key_exists($keyword, $inlined)) {
+            $inlined[$keyword] = $sibling;
+
+            return $inlined;
+        }
+
+        if ($keyword === 'required' && is_array($sibling) && is_array($inlined[$keyword])) {
+            $inlined[$keyword] = array_values(array_unique([...$inlined[$keyword], ...$sibling]));
+
+            return $inlined;
+        }
+
+        if ($keyword === 'properties' && is_array($sibling) && is_array($inlined[$keyword])) {
+            foreach ($sibling as $name => $subSchema) {
+                if (array_key_exists($name, $inlined[$keyword])) {
+                    throw SchemaException::conflictingReferenceSibling(
+                        $dialect,
+                        $keywordPath . '.' . $name,
+                        $reference,
+                        $keyword . '.' . $name,
+                    );
+                }
+
+                $inlined[$keyword][$name] = $subSchema;
+            }
+
+            return $inlined;
+        }
+
+        if (in_array($keyword, ['description', 'title'], true)) {
+            $inlined[$keyword] = $sibling;
+
+            return $inlined;
+        }
+
+        throw SchemaException::conflictingReferenceSibling($dialect, $keywordPath, $reference, $keyword);
     }
 
     /**

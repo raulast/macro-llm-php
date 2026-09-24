@@ -53,6 +53,12 @@ cyclic references are "unrolled to a limited degree, and only within non-require
 that limitation for every schema that is not actually recursive, and refuses real recursion by name. That is the
 better worst case.
 
+**Siblings beside a `$ref` are kept, because in JSON Schema they all apply.** `{$ref: X, "format": "date"}`
+means "matches X **and** the format is a date", so a constraint you wrote next to a reference is merged in rather
+than dropped. When a sibling and the definition both set the same keyword, the request is **refused by name**:
+merging would have to choose a winner, and choosing in silence is the thing this engine exists to refuse.
+`required` is unioned and `properties` are merged key by key, because neither of those involves a choice.
+
 Two things worth knowing about that channel: the reference marks it deprecated in favour of `responseFormat`,
 and the older OpenAPI-subset `Schema` proto is a **different** field list — it carries `nullable` and
 `minProperties`, and it names its references `ref`/`defs` without the `$`. This engine models the JSON-Schema

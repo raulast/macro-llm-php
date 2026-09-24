@@ -99,4 +99,35 @@ final class SchemaException extends MacroLLMException
             declaredType: $declaredType,
         );
     }
+
+    /**
+     * A `$ref` node carries a sibling keyword that the referenced definition already defines.
+     *
+     * Both apply under JSON Schema, so merging them would have to pick a winner in silence — the one thing this
+     * engine will not do. Refusing names the collision and leaves the choice to the caller.
+     */
+    public static function conflictingReferenceSibling(
+        SchemaDialect $dialect,
+        string $path,
+        string $reference,
+        string $keyword,
+    ): self {
+        return new self(
+            reason: 'conflicting_reference_sibling',
+            dialect: $dialect->value,
+            path: $path,
+            message: sprintf(
+                'The reference "%s" at %s is used with a sibling keyword "%s" that the referenced definition '
+                . 'also defines. Both apply under JSON Schema, so merging them would have to pick a winner in '
+                . 'silence, and that is the one thing this engine refuses to do. Move the constraint into the '
+                . 'definition, or inline the reference by hand. Dialect: "%s".',
+                $reference,
+                $path,
+                $keyword,
+                $dialect->value,
+            ),
+            keyword: $keyword,
+            reference: $reference,
+        );
+    }
 }
