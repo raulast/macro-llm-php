@@ -39,4 +39,19 @@ final class StructuredOutputUnsupportedException extends MacroLLMException
             ),
         );
     }
+
+    public static function noSuchMode(string $providerName, string $formatType, string $detail): self
+    {
+        return new self(
+            providerName: $providerName,
+            reason: 'no_such_mode',
+            message: sprintf(
+                'Provider "%s" cannot honour a "%s" response format: %s. Refusing beats sending it, because the '
+                . 'constraint would not exist on the wire while the caller believed it did.',
+                $providerName,
+                $formatType,
+                $detail,
+            ),
+        );
+    }
 }

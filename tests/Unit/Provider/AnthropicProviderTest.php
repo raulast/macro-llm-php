@@ -9,6 +9,7 @@ use MacroLLM\Contract\EmbeddingProviderInterface;
 use MacroLLM\Contract\ImageProviderInterface;
 use MacroLLM\Contract\AudioProviderInterface;
 use MacroLLM\Contract\RerankingProviderInterface;
+use MacroLLM\Exception\StructuredOutputUnsupportedException;
 use MacroLLM\Message\ContentPart;
 use MacroLLM\Message\FinishReason;
 use MacroLLM\Message\InternalMessage;
@@ -34,6 +35,131 @@ class AnthropicProviderTest extends TestCase
     }
 
     // ── toResponse: basic text ─────────────────────────────────────────────
+
+    // ── Structured output: a forced tool, since Anthropic has no response_format ──
+
+    public function testToPayloadForcesASingleStructuredOutputTool(): void
+    {
+        $provider = $this->makeProvider();
+        $format = ResponseFormat::jsonSchema('person', [
+            'type' => 'object',
+            'properties' => ['name' => ['type' => 'string']],
+            'required' => ['name'],
+        ]);
+
+        $payload = $provider->toPayload(new InternalRequest(
+            messages: [InternalMessage::user('Extract the person')],
+            responseFormat: $format,
+        ));
+
+        $this->assertSame(['type' => 'tool', 'name' => 'structured_output'], $payload['tool_choice']);
+        $this->assertCount(1, $payload['tools']);
+        $this->assertSame('structured_output', $payload['tools'][0]['name']);
+        $this->assertSame('string', $payload['tools'][0]['input_schema']['properties']['name']['type']);
+        $this->assertSame(['name'], $payload['tools'][0]['input_schema']['required']);
+    }
+
+    public function testToPayloadKeepsTheCallersToolsAlongsideTheForcedOne(): void
+    {
+        $provider = $this->makeProvider();
+        $format = ResponseFormat::jsonSchema('person', [
+            'type' => 'object',
+            'properties' => ['name' => ['type' => 'string']],
+            'required' => ['name'],
+        ]);
+
+        $payload = $provider->toPayload(new InternalRequest(
+            messages: [InternalMessage::user('Extract')],
+            tools: [new ToolDefinition('lookup', 'Looks something up', ['type' => 'object'], fn () => null)],
+            responseFormat: $format,
+        ));
+
+        $this->assertCount(2, $payload['tools']);
+        $this->assertSame('lookup', $payload['tools'][0]['name']);
+        $this->assertSame('structured_output', $payload['tools'][1]['name']);
+    }
+
+    /**
+     * Anthropic has no schema-less JSON mode, and tool-forcing needs a schema to enforce, so `json()` cannot be
+     * honoured. Refusing beats sending a request whose constraint does not exist.
+     */
+    public function testToPayloadRefusesSchemaLessJsonMode(): void
+    {
+        $provider = $this->makeProvider();
+
+        try {
+            $provider->toPayload(new InternalRequest(
+                messages: [InternalMessage::user('Give me JSON')],
+                responseFormat: ResponseFormat::json(),
+            ));
+            $this->fail('Expected a StructuredOutputUnsupportedException.');
+        } catch (StructuredOutputUnsupportedException $e) {
+            $this->assertSame('anthropic', $e->providerName);
+            $this->assertSame('no_such_mode', $e->reason);
+        }
+    }
+
+    public function testToPayloadRefusesACallerToolNamedLikeTheReservedOne(): void
+    {
+        $provider = $this->makeProvider();
+
+        try {
+            $provider->toPayload(new InternalRequest(
+                messages: [InternalMessage::user('Extract')],
+                tools: [new ToolDefinition('structured_output', 'Collides', ['type' => 'object'], fn () => null)],
+                responseFormat: ResponseFormat::jsonSchema('person', [
+                    'type' => 'object',
+                    'properties' => ['name' => ['type' => 'string']],
+                    'required' => ['name'],
+                ]),
+            ));
+            $this->fail('Expected a StructuredOutputUnsupportedException.');
+        } catch (StructuredOutputUnsupportedException $e) {
+            $this->assertStringContainsString('structured_output', $e->getMessage());
+        }
+    }
+
+    /**
+     * The forced tool carries the ANSWER. Returning it as a ToolCall would send the Agent loop hunting for a tool
+     * the caller never registered, so it becomes the content instead — and the finish reason becomes Stop, because
+     * from the caller's point of view nothing was called.
+     */
+    public function testForcedStructuredToolUseBecomesTheResponseContent(): void
+    {
+        $provider = $this->makeProvider();
+
+        $response = $provider->toResponse([
+            'id' => 'msg_1',
+            'content' => [
+                ['type' => 'text', 'text' => 'Here it is: '],
+                ['type' => 'tool_use', 'id' => 'toolu_1', 'name' => 'structured_output', 'input' => ['name' => 'Ada']],
+            ],
+            'stop_reason' => 'tool_use',
+            'usage' => ['input_tokens' => 5, 'output_tokens' => 7],
+        ]);
+
+        $this->assertSame('{"name":"Ada"}', $response->content);
+        $this->assertSame(FinishReason::Stop, $response->finishReason);
+        $this->assertSame([], $response->toolCalls);
+    }
+
+    public function testAnOrdinaryToolUseIsStillAToolCall(): void
+    {
+        $provider = $this->makeProvider();
+
+        $response = $provider->toResponse([
+            'id' => 'msg_2',
+            'content' => [
+                ['type' => 'tool_use', 'id' => 'toolu_2', 'name' => 'lookup', 'input' => ['q' => 'x']],
+            ],
+            'stop_reason' => 'tool_use',
+        ]);
+
+        $this->assertNull($response->content);
+        $this->assertSame(FinishReason::ToolCalls, $response->finishReason);
+        $this->assertCount(1, $response->toolCalls);
+        $this->assertSame('lookup', $response->toolCalls[0]->name);
+    }
 
     public function testToResponseParsesTextContent(): void
     {

@@ -91,15 +91,21 @@ resolved; external and remote references are refused, not fetched.
 | OpenAI-compatible (10 providers) | `response_format.json_schema` with `name`, `schema`, `strict` | normalized for `SchemaDialect::OpenAi`; when `strict: true`, completed for strict mode |
 | Gemini | `generationConfig.responseMimeType` + `responseJsonSchema` | normalized for `SchemaDialect::Gemini` |
 | Cohere | `response_format.json_schema` beside `type: json_object` | normalized for `SchemaDialect::Cohere` |
-| Anthropic | **refused by name** — see below | — |
+| Anthropic | a forced tool: `structured_output` + `tool_choice` | passed through — Anthropic takes plain JSON Schema as a tool `input_schema`, and this package makes no claim about its subset |
 
-`ResponseFormat::json()` (the schema-less JSON mode) emits the family's JSON mode without a schema, on both
-families above.
+`ResponseFormat::json()` (the schema-less JSON mode) emits the family's JSON mode without a schema, on every
+family except Anthropic, which has no such mode and says so.
 
-**They disagree about what a schema means, and the package refuses rather than pretending otherwise.** A
-provider that cannot honour a schema raises `SchemaException`, so you learn at the call site instead of
-receiving prose back from an endpoint you believed was constrained. Until Anthropic and Cohere emission lands,
-those two families refuse structured output explicitly.
+**They disagree about how to express the same request, and the package absorbs that rather than passing it on.**
+Anthropic has no `response_format` at all, so a schema is enforced by forcing a single tool call: the schema
+becomes the tool's `input_schema`, `tool_choice` pins it, and the answer arrives as that tool's input — which the
+provider unwraps back into `content`, with `finishReason` reported as `Stop` because nothing was actually called.
+**`structured_output` is therefore a reserved tool name**: a caller tool using it is refused rather than silently
+shadowed.
+
+**A provider that cannot honour the request raises instead of pretending.** `StructuredOutputUnsupportedException`
+means the provider has no way to enforce this at all; `SchemaException` means the schema is wrong for the dialect.
+Both surface at the call site, rather than as prose from an endpoint you believed was constrained.
 
 **Annotating `strict`.** Only OpenAI-compatible providers have the flag. `strict: true` also completes the
 schema, because strict mode requires `additionalProperties: false` on every object and every property listed in
@@ -108,12 +114,11 @@ you need your schema to travel byte-identical, pass `strict: false`.
 
 ## Status: partial, and stated as such
 
-Emission works for **OpenAI-compatible, Gemini and Cohere**. Two things are still missing and this section is
-what changes when they land:
+Emission works for **all four families**: OpenAI-compatible, Gemini, Cohere and Anthropic. One thing is still
+missing and this section is what changes when it lands:
 
-- **Anthropic refuses**, and raises rather than silently returning prose.
-- **The streaming and agent paths do not carry `responseFormat` yet**, so structured output applies to a direct
-  `chat()` call. (`2.4` of the same work.)
+- **The streaming and agent paths do not carry `responseFormat` yet**, so structured output currently applies to a
+direct `chat()` call. (`2.4` of the same work.)
 
 **One combination is refused outright:** Cohere's reference documents `response_format` as unsupported alongside
 `documents` or `tools`, and the package raises `StructuredOutputUnsupportedException` rather than sending a

@@ -6,6 +6,7 @@ namespace MacroLLM\Provider;
 
 use MacroLLM\Message\ContentPart;
 use MacroLLM\Message\ContentPartType;
+use MacroLLM\Exception\StructuredOutputUnsupportedException;
 use MacroLLM\Message\FinishReason;
 use MacroLLM\Message\InternalMessage;
 use MacroLLM\Message\InternalRequest;
@@ -18,6 +19,14 @@ use MacroLLM\Tool\ToolDefinition;
 
 class AnthropicProvider extends AbstractProvider
 {
+    /**
+     * The tool name this provider forces when a schema is requested.
+     *
+     * **Reserved.** A caller tool with this name would collide with the forced one, so the request is refused
+     * rather than letting one silently shadow the other.
+     */
+    private const STRUCTURED_OUTPUT_TOOL = 'structured_output';
+
     public function name(): string
     {
         return 'anthropic';
@@ -74,13 +83,64 @@ class AnthropicProvider extends AbstractProvider
             $payload['tools'] = $this->mapTools($request->tools);
         }
 
+        if ($request->responseFormat !== null) {
+            $this->applyStructuredOutput($payload, $request);
+        }
+
         return $payload;
+    }
+
+    /**
+     * Anthropic has no `response_format`, so a schema is enforced by forcing a single tool call: the schema becomes
+     * the tool's `input_schema` and `tool_choice` pins that tool. The answer arrives as the tool's input, which
+     * {@see toResponse()} unwraps back into content, so a caller sees the same shape as on every other provider.
+     *
+     * The schema is NOT run through the dialect engine: Anthropic consumes it as a tool `input_schema`, which is
+     * plain JSON Schema, and this package has not verified Anthropic's subset. Passing it through makes no claim;
+     * filtering it against a guessed list would make a false one. Verifying that subset is a recorded follow-up.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function applyStructuredOutput(array &$payload, InternalRequest $request): void
+    {
+        $format = $request->responseFormat;
+
+        if ($format->type !== 'json_schema') {
+            throw StructuredOutputUnsupportedException::noSuchMode(
+                'anthropic',
+                $format->type,
+                'tool-forcing needs a schema to enforce, and Anthropic documents no schema-less JSON mode',
+            );
+        }
+
+        if ($format->schema === null) {
+            throw new \LogicException('A json_schema ResponseFormat must carry a schema.');
+        }
+
+        foreach ($request->tools as $tool) {
+            if ($tool->name === self::STRUCTURED_OUTPUT_TOOL) {
+                throw StructuredOutputUnsupportedException::conflictsWith(
+                    'anthropic',
+                    sprintf('a caller tool named "%s"', self::STRUCTURED_OUTPUT_TOOL),
+                    'that name is reserved for the tool this provider forces to enforce a schema; rename the tool',
+                );
+            }
+        }
+
+        $payload['tools'][] = [
+            'name'         => self::STRUCTURED_OUTPUT_TOOL,
+            'description'  => 'Return the answer in the required structure.',
+            'input_schema' => $format->schema,
+        ];
+
+        $payload['tool_choice'] = ['type' => 'tool', 'name' => self::STRUCTURED_OUTPUT_TOOL];
     }
 
     public function toResponse(array $providerResponse): InternalResponse
     {
         $content = null;
         $toolCalls = [];
+        $structuredOutput = false;
 
         foreach ($providerResponse['content'] ?? [] as $block) {
             if ($block['type'] === 'text') {
@@ -88,6 +148,15 @@ class AnthropicProvider extends AbstractProvider
             }
 
             if ($block['type'] === 'tool_use') {
+                // The forced tool carries the ANSWER, not a request to call something. Handing it back as a
+                // ToolCall would send the Agent loop hunting for a tool the caller never registered.
+                if ($block['name'] === self::STRUCTURED_OUTPUT_TOOL) {
+                    $content = json_encode($block['input'] ?? [], JSON_THROW_ON_ERROR);
+                    $structuredOutput = true;
+
+                    continue;
+                }
+
                 $toolCalls[] = new ToolCall(
                     id: $block['id'],
                     name: $block['name'],
@@ -97,6 +166,11 @@ class AnthropicProvider extends AbstractProvider
         }
 
         $finishReason = $this->mapStopReason($providerResponse['stop_reason'] ?? 'end_turn');
+
+        if ($structuredOutput) {
+            // Nothing was called from the caller's point of view, so `tool_use` would be a lie.
+            $finishReason = FinishReason::Stop;
+        }
 
         $usage = new Usage();
         if (isset($providerResponse['usage'])) {
