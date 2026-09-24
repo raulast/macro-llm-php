@@ -6,6 +6,8 @@ namespace MacroLLM\Agent;
 
 use Closure;
 use MacroLLM\Agent\Memory\NullMemory;
+use MacroLLM\Approval\Decision;
+use MacroLLM\Approval\PendingApproval;
 use MacroLLM\Contract\ConversationMemoryInterface;
 use MacroLLM\Message\ResponseFormat;
 use MacroLLM\Tool\ToolDefinition;
@@ -26,6 +28,10 @@ final class AgentConfig
      *        Pass null (default) to disable — zero overhead on the hot path.
      * @param ResponseFormat|null $responseFormat Structured output the agent must produce. A format set on the
      *        request passed to `run()` wins over this one, because it is the more specific of the two.
+     * @param Closure(PendingApproval): Decision|null $approveToolCalls Consulted before a tool that declares
+     *        `requiresApproval` runs; returning anything but `Decision::Approve` denies the call. Leave null when no
+     *        tool needs approval. When a tool needs it and this is null, the agent THROWS rather than running the
+     *        tool or denying it silently, so a human hears about it.
      */
     public function __construct(
         public readonly ?string $provider = null,
@@ -37,5 +43,6 @@ final class AgentConfig
         public readonly ConversationMemoryInterface $memory = new NullMemory(),
         public readonly ?Closure $onStep = null,
         public readonly ?ResponseFormat $responseFormat = null,
+        public readonly ?Closure $approveToolCalls = null,
     ) {}
 }

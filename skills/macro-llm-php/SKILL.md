@@ -68,6 +68,8 @@ other container: bind the client in your container and inject it — no Laravel 
 | `InMemoryVectorStore` | `MacroLLM\VectorStore\InMemoryVectorStore` | Reference vector store: cosine similarity, no dependencies, in memory |
 | `VectorMatch` | `MacroLLM\VectorStore\VectorMatch` | One retrieval hit: `id`, `score` and the stored metadata |
 | `SimilaritySearchTool` | `MacroLLM\Tool\SimilaritySearchTool` | Builds the tool an Agent calls to search an indexed store |
+| `PendingApproval` | `MacroLLM\Approval\PendingApproval` | A tool call waiting for a human answer, with its arguments |
+| `Decision` | `MacroLLM\Approval\Decision` | `Approve` or `Reject` — what the human answered |
 | `OpenAiCompatibleWireTemplate` | `MacroLLM\Testing\OpenAiCompatibleWireTemplate` | The wire shape the ten OpenAI-compatible providers share, used by the fake |
 | `AnthropicWireTemplate` | `MacroLLM\Testing\AnthropicWireTemplate` | The Messages API shape: content blocks, a `tool_use` block, arguments as a real array |
 | `GeminiWireTemplate` | `MacroLLM\Testing\GeminiWireTemplate` | The `generateContent` shape: `parts`, a `functionCall` part, `STOP` even for a call |
@@ -87,6 +89,7 @@ other container: bind the client in your container and inject it — no Laravel 
 | `structured-output.md` | JSON Schema normalization: which keywords each provider dialect accepts, and why an unsupported one is refused instead of dropped. |
 | `testing.md` | Faking a provider so your own tests need no network: `FakeGateway`, what gets recorded, and what is deliberately not faked. |
 | `vector-store.md` | Retrieval: the driver the package ships and what it costs, the search API, and the four guards that prevent a wrong answer instead of an error. |
+| `tool-approval.md` | Making a dangerous tool wait for a human: marking it, answering it, what each answer does, and how a raised decision resumes. |
 | `invariants.md` | Non-negotiable package behavior and contracts you must not break when extending or debugging. |
 
 ## Inline recipes

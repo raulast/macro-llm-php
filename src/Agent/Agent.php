@@ -10,8 +10,11 @@ use MacroLLM\MacroLLM;
 use MacroLLM\Message\InternalMessage;
 use MacroLLM\Message\InternalRequest;
 use MacroLLM\Message\InternalResponse;
+use MacroLLM\Approval\PendingApproval;
 use MacroLLM\Exception\SchemaValidationException;
+use MacroLLM\Exception\ToolApprovalRequiredException;
 use MacroLLM\Schema\SchemaValidator;
+use MacroLLM\Tool\ToolCall;
 use MacroLLM\Tool\ToolDefinition;
 use MacroLLM\Tool\ToolResult;
 
@@ -100,24 +103,33 @@ final class Agent
                 } else {
                     $definition = $toolMap[$toolCall->name];
 
-                    try {
-                        // The schema a tool declares is enforced BEFORE its callable runs. A schema the package
-                        // accepts and never checks is worse than no schema at all: it looks like a contract while
-                        // enforcing nothing, and a model can then hand a tool arguments the tool never asked for.
-                        (new SchemaValidator())->validate($toolCall->arguments, $definition->parameters);
+                    // Asked OUTSIDE the try below, and that placement is load-bearing: the generic `catch
+                    // (\Throwable)` would swallow the approval requirement, turning "a human must decide" into "the
+                    // tool errored" and letting the loop continue as though nothing needed deciding.
+                    $denial = $this->approvalFor($toolCall, $definition, $request);
 
-                        $result = ($definition->callable)($toolCall->arguments);
-                        $toolResult = ToolResult::ok($toolCall->id, $toolCall->name, $result);
-                    } catch (SchemaValidationException $e) {
-                        // Not a crash: the loop exists so the model can correct itself, and the message carries the
-                        // failing path for exactly that reason.
-                        $toolResult = ToolResult::error(
-                            $toolCall->id,
-                            $toolCall->name,
-                            'Invalid arguments: ' . $e->getMessage(),
-                        );
-                    } catch (\Throwable $e) {
-                        $toolResult = ToolResult::error($toolCall->id, $toolCall->name, $e->getMessage());
+                    if ($denial !== null) {
+                        $toolResult = $denial;
+                    } else {
+                        try {
+                            // The schema a tool declares is enforced BEFORE its callable runs. A schema the package
+                            // accepts and never checks is worse than no schema at all: it looks like a contract while
+                            // enforcing nothing, and a model can then hand a tool arguments the tool never asked for.
+                            (new SchemaValidator())->validate($toolCall->arguments, $definition->parameters);
+
+                            $result = ($definition->callable)($toolCall->arguments);
+                            $toolResult = ToolResult::ok($toolCall->id, $toolCall->name, $result);
+                        } catch (SchemaValidationException $e) {
+                            // Not a crash: the loop exists so the model can correct itself, and the message carries the
+                            // failing path for exactly that reason.
+                            $toolResult = ToolResult::error(
+                                $toolCall->id,
+                                $toolCall->name,
+                                'Invalid arguments: ' . $e->getMessage(),
+                            );
+                        } catch (\Throwable $e) {
+                            $toolResult = ToolResult::error($toolCall->id, $toolCall->name, $e->getMessage());
+                        }
                     }
                 }
 
@@ -150,6 +162,51 @@ final class Agent
      *
      * @param ToolDefinition[] $tools Pre-resolved tool list to include in the request.
      */
+    /**
+     * A tool that declares itself dangerous does not run until a human says so.
+     *
+     * Returns the denial to hand back to the model, or null when the call may proceed. The no-approver case THROWS
+     * instead of denying, because a silent denial would let the agent keep working while the human who marked the
+     * tool as dangerous never learns it was about to fire.
+     *
+     * @return ToolResult|null
+     */
+    private function approvalFor(ToolCall $toolCall, ToolDefinition $definition, InternalRequest $request): ?ToolResult
+    {
+        if (!$definition->requiresApproval) {
+            return null;
+        }
+
+        $pending = new PendingApproval(
+            toolCallId: $toolCall->id,
+            toolName: $toolCall->name,
+            arguments: $toolCall->arguments,
+            description: $definition->description,
+        );
+
+        $approver = $this->config->approveToolCalls;
+
+        if ($approver === null) {
+            throw ToolApprovalRequiredException::noApprover($pending, $request->messages);
+        }
+
+        if ($approver($pending)->allowsExecution()) {
+            return null;
+        }
+
+        // A denial is a result the model can act on, not an exception: it can ask for something else, or explain why
+        // this call is the one it needs.
+        return ToolResult::error(
+            $toolCall->id,
+            $toolCall->name,
+            sprintf(
+                'The call to "%s" was declined, so it did not run. Try another approach, or explain why this call is '
+                . 'needed.',
+                $toolCall->name,
+            ),
+        );
+    }
+
     private function buildInitialRequest(string|InternalRequest $input, array $tools): InternalRequest
     {
         if (is_string($input)) {
