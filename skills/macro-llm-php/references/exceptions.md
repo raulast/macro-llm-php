@@ -5,7 +5,7 @@ Every exception the package throws, where it lives, how it is constructed, and w
 ## Exception catalog
 
 All package exceptions live in the `MacroLLM\Exception` namespace. `MacroLLMException` is the abstract
-base; the sixteen concrete classes below extend it.
+base; the seventeen concrete classes below extend it.
 
 | Exception | Namespace | Constructor args (descriptive shorthand) | When thrown |
 |---|---|---|---|
@@ -17,6 +17,7 @@ base; the sixteen concrete classes below extend it.
 | `SchemaValidationException` | `MacroLLM\Exception` | static factories, e.g. `valueMismatch()` | A value does not match a schema, or the schema cannot be enforced |
 | `ProviderFailoverException` | `MacroLLM\Exception` | `exhausted()` | Every provider in the failover chain failed |
 | `FakeGatewayException` | `MacroLLM\Exception` | static factories | A test double was asked for something it cannot provide — no template for that provider, or an empty queue |
+| `VectorStoreException` | `MacroLLM\Exception` | static factories | A vector store was asked for something that would produce a plausible-looking wrong answer |
 | `MissingApiKeyException` | `MacroLLM\Exception` | `string $provider` | API key missing before request |
 | `StreamInterruptedException` | `MacroLLM\Exception` | `array $chunks` | SSE stream dropped before finish |
 | `ToolNotFoundException` | `MacroLLM\Exception` | `string $toolName` | `ToolRegistry::get()` asked for a name never registered |

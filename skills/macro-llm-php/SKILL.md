@@ -65,6 +65,8 @@ other container: bind the client in your container and inject it — no Laravel 
 | `SchemaValidator` | `MacroLLM\Schema\SchemaValidator` | Checks a decoded value against a JSON Schema and reports the failing path |
 | `FailoverPolicy` | `MacroLLM\Provider\FailoverPolicy` | Classifies which provider failures justify trying another provider |
 | `FakeGateway` | `MacroLLM\Testing\FakeGateway` | Test double: a whole provider answered from a queue, with no network |
+| `InMemoryVectorStore` | `MacroLLM\VectorStore\InMemoryVectorStore` | Reference vector store: cosine similarity, no dependencies, in memory |
+| `VectorMatch` | `MacroLLM\VectorStore\VectorMatch` | One retrieval hit: `id`, `score` and the stored metadata |
 | `OpenAiCompatibleWireTemplate` | `MacroLLM\Testing\OpenAiCompatibleWireTemplate` | The wire shape the ten OpenAI-compatible providers share, used by the fake |
 | `AnthropicWireTemplate` | `MacroLLM\Testing\AnthropicWireTemplate` | The Messages API shape: content blocks, a `tool_use` block, arguments as a real array |
 | `GeminiWireTemplate` | `MacroLLM\Testing\GeminiWireTemplate` | The `generateContent` shape: `parts`, a `functionCall` part, `STOP` even for a call |
@@ -83,6 +85,7 @@ other container: bind the client in your container and inject it — no Laravel 
 | `exceptions.md` | The exception hierarchy and which failure path to catch for HTTP, provider, configuration, and tool errors. |
 | `structured-output.md` | JSON Schema normalization: which keywords each provider dialect accepts, and why an unsupported one is refused instead of dropped. |
 | `testing.md` | Faking a provider so your own tests need no network: `FakeGateway`, what gets recorded, and what is deliberately not faked. |
+| `vector-store.md` | Retrieval: the driver the package ships and what it costs, the search API, and the four guards that prevent a wrong answer instead of an error. |
 | `invariants.md` | Non-negotiable package behavior and contracts you must not break when extending or debugging. |
 
 ## Inline recipes
