@@ -192,11 +192,7 @@ final class CohereProvider extends AbstractProvider implements
 
     public function embed(EmbeddingRequest $request): EmbeddingResponse
     {
-        $response = (new \MacroLLM\Http\HttpClient(
-            $this->baseUrl(),
-            $this->headers(),
-            $this->config->timeout ?? 30,
-        ))->post('/embed', [
+        $response = $this->httpClient($this->config->timeout ?? 30)->post('/embed', [
             'model'           => $request->model ?? $this->config->defaultModel,
             'texts'           => $request->inputs,
             'input_type'      => 'search_document',
@@ -222,11 +218,7 @@ final class CohereProvider extends AbstractProvider implements
             $payload['top_n'] = $request->limit;
         }
 
-        $response = (new \MacroLLM\Http\HttpClient(
-            $this->baseUrl(),
-            $this->headers(),
-            $this->config->timeout ?? 30,
-        ))->post('/rerank', $payload);
+        $response = $this->httpClient($this->config->timeout ?? 30)->post('/rerank', $payload);
 
         $results = array_map(
             fn(array $r) => new RankedDocument(

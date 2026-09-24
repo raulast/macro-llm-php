@@ -63,8 +63,8 @@ try {
     $partial = $e->lastResponse->content;
 } catch (ProviderRequestException $e) {
     // $e->statusCode — HTTP status
-    // $e->providerBody — raw error body from provider
-    Log::error("Provider error {$e->statusCode}: {$e->providerBody}");
+    // $e->responseBody — raw error body from provider
+    Log::error("Provider error {$e->statusCode}: {$e->responseBody}");
 } catch (MacroLLMException $e) {
     // Catch-all for any package exception
     Log::error($e->getMessage());
@@ -78,6 +78,6 @@ to catch everything the package throws.
 
 ## Source of truth
 
-The property names above (`$e->iterations`, `$e->lastResponse`, `$e->statusCode`, `$e->providerBody`)
+The property names above (`$e->iterations`, `$e->lastResponse`, `$e->statusCode`, `$e->responseBody`)
 are verified against `src/Exception/` and `tests/Unit/Exception/ExceptionTest.php`. If the monolith
 SKILL.md disagrees with the source, follow the source.

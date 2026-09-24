@@ -221,6 +221,18 @@ final class SchemaNormalizer
     }
 
     /**
+     * Whether a schema describes an object, including a nullable union such as `['object', 'null']`.
+     *
+     * @param  array<string, mixed>  $schema
+     */
+    private function declaresObject(array $schema): bool
+    {
+        $type = $schema['type'] ?? null;
+
+        return $type === 'object' || (is_array($type) && in_array('object', $type, true));
+    }
+
+    /**
      * @param  array<string, mixed>  $inlined
      * @return array<string, mixed>
      */
@@ -303,6 +315,10 @@ final class SchemaNormalizer
             if (!is_array($schema['additionalProperties'] ?? null)) {
                 $schema['additionalProperties'] = false;
             }
+        } elseif ($this->declaresObject($schema) && !is_array($schema['additionalProperties'] ?? null)) {
+            // An object that declares no properties still has to forbid the ones it never declared. There is
+            // nothing to add to `required`, so none is invented.
+            $schema['additionalProperties'] = false;
         }
 
         foreach ($schema as $keyword => $value) {

@@ -9,7 +9,8 @@ JSON Schema — so the schema is passed through an engine first.
 The engine performs exactly two transformations, and both preserve your meaning:
 
 1. **Annotation-only keywords the target rejects are dropped** — `$id`, `$schema`, `$comment`, `examples`,
-   `readOnly`, `writeOnly`, `deprecated`. Dropping an annotation changes no validation outcome.
+   `example`, `default`, `readOnly`, `writeOnly`, `deprecated`. Dropping an annotation changes no validation
+   outcome, and `default` is documented by the providers as not affecting validation.
 2. **Local `$ref` pointers are inlined** for dialects that cannot receive a reference at all.
 
 **Everything else is either kept or refused.** A *validation* keyword the target does not support raises
@@ -25,6 +26,7 @@ use MacroLLM\Schema\SchemaDialect;
 
 SchemaDialect::OpenAi;   // OpenAI and every OpenAI-compatible provider
 SchemaDialect::Gemini;   // Google Gemini
+SchemaDialect::Cohere;   // Cohere
 ```
 
 | Method | Meaning |
@@ -41,12 +43,16 @@ documented unsupported composition is `allOf`, `not`, `dependentRequired`, `depe
 documentation never demonstrates it, so the safe direction is to refuse with a message that points at
 `anyOf`, which is supported.
 
-**Gemini accepts a JSON-Schema channel whose supported keyword list is enumerated by the API reference**:
-`$id`, `$defs`, `$ref`, `$anchor`, `type`, `format`, `title`, `description`, `enum`, `items`, `prefixItems`,
+**Gemini accepts a JSON-Schema channel whose supported keyword list is enumerated by the API reference.** These
+are the keywords the engine **keeps**: `type`, `format`, `title`, `description`, `enum`, `items`, `prefixItems`,
 `minItems`, `maxItems`, `minimum`, `maximum`, `anyOf`, `oneOf` (interpreted as `anyOf`), `properties`,
 `additionalProperties`, `required`, plus the non-standard `propertyOrdering`. Anything outside that list —
 `allOf`, `not`, `const`, `uniqueItems`, `minLength`, `maxLength`, `pattern`, `minProperties` — is refused by
 name.
+
+Four keywords need a word of their own, because the reference lists them and the engine still does not send them:
+`$ref` and `$defs` are **inlined** (see below), `$id` is annotation-only and dropped, and `$anchor` is **refused**
+— an anchor only means something when a `$ref` travels un-inlined, which never happens for this dialect.
 
 Even though `$ref` is supported there, this engine **inlines** references for Gemini. The reference states that
 cyclic references are "unrolled to a limited degree, and only within non-required properties"; inlining sidesteps
@@ -118,13 +124,11 @@ schema, because strict mode requires `additionalProperties: false` on every obje
 `required` — strict mode has no notion of an optional field, so optionality is expressed as a nullable type. If
 you need your schema to travel byte-identical, pass `strict: false`.
 
-## Status: partial, and stated as such
+## Status
 
-Emission works for **all four families**: OpenAI-compatible, Gemini, Cohere and Anthropic. One thing is still
-missing and this section is what changes when it lands:
-
-- **The streaming and agent paths do not carry `responseFormat` yet**, so structured output currently applies to a
-direct `chat()` call. (`2.4` of the same work.)
+Emission works for **all four families**: OpenAI-compatible, Gemini, Cohere and Anthropic. It applies to
+`chat()`, to `stream()` and to agents — all three carry the format through to the provider, and each has a test
+pinning it. Nothing about structured output is partial in this version.
 
 **One combination is refused outright:** Cohere's reference documents `response_format` as unsupported alongside
 `documents` or `tools`, and the package raises `StructuredOutputUnsupportedException` rather than sending a

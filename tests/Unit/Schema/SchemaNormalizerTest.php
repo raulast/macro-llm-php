@@ -323,6 +323,37 @@ final class SchemaNormalizerTest extends TestCase
         $this->assertSame(['y'], $completed['$defs']['thing']['required']);
     }
 
+    /**
+     * An object that declares no properties still has to forbid the ones it never declared. Strict mode requires
+     * `additionalProperties: false` on every object, not only on the ones with a property list — the first version
+     * of this method completed only objects that HAD `properties`, so `['type' => 'object']` travelled
+     * un-completed and earned a provider error the caller could not explain.
+     */
+    public function testStrictModeCompletionReachesAnObjectWithoutProperties(): void
+    {
+        $completed = (new SchemaNormalizer())->completeForStrictMode(['type' => 'object']);
+
+        $this->assertFalse($completed['additionalProperties']);
+        $this->assertArrayNotHasKey('required', $completed, 'there are no properties to require');
+    }
+
+    /** A nullable union is how JSON Schema spells an optional object, so it must be completed too. */
+    public function testStrictModeCompletionReachesANullableObject(): void
+    {
+        $completed = (new SchemaNormalizer())->completeForStrictMode(['type' => ['object', 'null']]);
+
+        $this->assertFalse($completed['additionalProperties']);
+    }
+
+    public function testStrictModeCompletionLeavesANonObjectAlone(): void
+    {
+        $this->assertSame(['type' => 'string'], (new SchemaNormalizer())->completeForStrictMode(['type' => 'string']));
+        $this->assertSame(
+            ['type' => 'array', 'items' => ['type' => 'string']],
+            (new SchemaNormalizer())->completeForStrictMode(['type' => 'array', 'items' => ['type' => 'string']]),
+        );
+    }
+
     public function testNormalizationAndStrictCompletionCompose(): void
     {
         $normalizer = new SchemaNormalizer();

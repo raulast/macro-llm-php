@@ -13,7 +13,9 @@ use MacroLLM\Exception\ProviderRequestException;
 use MacroLLM\Message\EmbeddingRequest;
 use MacroLLM\Message\ImageRequest;
 use MacroLLM\Message\RerankingRequest;
+use MacroLLM\Provider\CohereProvider;
 use MacroLLM\Provider\CohereRerankingProvider;
+use MacroLLM\Provider\GeminiProvider;
 use MacroLLM\Provider\OpenAIEmbeddingProvider;
 use MacroLLM\Provider\OpenAIImageProvider;
 use MacroLLM\Tests\TestCase;
@@ -61,6 +63,82 @@ final class ProviderSeamParityTest extends TestCase
             new ProviderConfig(apiKey: 'test-key', defaultModel: 'rerank-v3.5'),
             httpHandlerFactory: fn () => $stack,
         );
+    }
+
+    /** @param list<Response> $queue */
+    private function makeGemini(array $queue, array &$history = []): GeminiProvider
+    {
+        $stack = HandlerStack::create(new MockHandler($queue));
+        $stack->push(Middleware::history($history));
+
+        return new GeminiProvider(
+            new ProviderConfig(apiKey: 'test-key', defaultModel: 'gemini-2.0-flash'),
+            httpHandlerFactory: fn () => $stack,
+        );
+    }
+
+    /** @param list<Response> $queue */
+    private function makeCohere(array $queue, array &$history = []): CohereProvider
+    {
+        $stack = HandlerStack::create(new MockHandler($queue));
+        $stack->push(Middleware::history($history));
+
+        return new CohereProvider(
+            new ProviderConfig(apiKey: 'test-key', defaultModel: 'command-r-plus'),
+            httpHandlerFactory: fn () => $stack,
+        );
+    }
+
+    /**
+     * The three paths an independent verification found constructing `HttpClient` by fully-qualified name, which
+     * evaded the invariant grep AND bypassed the trait. Bypassing the trait is what made them impossible to stub:
+     * before this, every attempt was a real network call, so nothing could test them.
+     *
+     * These tests assert the seam is honoured — the request reaches the stub — rather than the response parsing,
+     * which is pre-existing behaviour and a different concern.
+     */
+    public function test_gemini_embedding_goes_through_the_shared_client(): void
+    {
+        $history = [];
+        $provider = $this->makeGemini(
+            [new Response(200, [], '{"embedding":{"values":[0.1,0.2]}}')],
+            $history,
+        );
+
+        $response = $provider->embed(new EmbeddingRequest(['hello']));
+
+        $this->assertCount(1, $history, 'the @internal seam must reach this path');
+        $this->assertSame('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:embedContent', (string) $history[0]['request']->getUri());
+        $this->assertSame([0.1, 0.2], $response->embeddings[0]);
+    }
+
+    public function test_cohere_embedding_goes_through_the_shared_client(): void
+    {
+        $history = [];
+        $provider = $this->makeCohere(
+            [new Response(200, [], '{"embeddings":{"float":[[0.1,0.2]]}}')],
+            $history,
+        );
+
+        $response = $provider->embed(new EmbeddingRequest(['hello']));
+
+        $this->assertCount(1, $history);
+        $this->assertSame('https://api.cohere.com/v2/embed', (string) $history[0]['request']->getUri());
+        $this->assertSame([0.1, 0.2], $response->embeddings[0]);
+    }
+
+    public function test_cohere_reranking_goes_through_the_shared_client(): void
+    {
+        $history = [];
+        $provider = $this->makeCohere(
+            [new Response(200, [], '{"results":[{"index":0,"relevance_score":0.9}]}')],
+            $history,
+        );
+
+        $provider->rerank(new RerankingRequest('query', ['doc one', 'doc two']));
+
+        $this->assertCount(1, $history);
+        $this->assertSame('https://api.cohere.com/v2/rerank', (string) $history[0]['request']->getUri());
     }
 
     public function testEmbeddingReachesTheStubbedHandlerAndParsesTheResponse(): void

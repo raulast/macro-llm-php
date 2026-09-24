@@ -300,11 +300,7 @@ final class GeminiProvider extends AbstractProvider implements
 
     private function fetchRaw(string $path, array $payload): array
     {
-        return (new \MacroLLM\Http\HttpClient(
-            $this->baseUrl(),
-            $this->headers(),
-            $this->config->timeout ?? 60,
-        ))->post($path, $payload);
+        return $this->httpClient($this->config->timeout ?? 60)->post($path, $payload);
     }
 
     // ── ProviderInterface ────────────────────────────────────────────────────

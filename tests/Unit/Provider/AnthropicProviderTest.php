@@ -343,19 +343,37 @@ class AnthropicProviderTest extends TestCase
 
     // ── toPayload: silently ignores ResponseFormat ──────────────────────────
 
-    public function testToPayloadIgnoresResponseFormat(): void
+    /**
+     * Replaces `testToPayloadIgnoresResponseFormat`, which asserted the absence of a key this provider never
+     * emits — so it passed whether or not the feature existed, and it pinned the REMOVED defect as expected
+     * behaviour. An independent verification caught it. This version pins something that can actually fail: a
+     * caller who asked for nothing must not be silently forced into a tool.
+     */
+    public function testToPayloadWithoutAResponseFormatForcesNothing(): void
     {
         $provider = $this->makeProvider();
-        $format = ResponseFormat::jsonSchema('person', ['type' => 'object']);
-        $request = new InternalRequest(
-            messages: [InternalMessage::user('Extract person')],
-            responseFormat: $format,
-        );
 
-        $payload = $provider->toPayload($request);
+        $payload = $provider->toPayload(new InternalRequest(
+            messages: [InternalMessage::user('Just answer')],
+        ));
 
-        // Anthropic does not support response_format — must NOT be in payload
-        $this->assertArrayNotHasKey('response_format', $payload);
+        $this->assertArrayNotHasKey('tool_choice', $payload);
+        $this->assertArrayNotHasKey('tools', $payload);
+        $this->assertArrayNotHasKey('response_format', $payload, 'this provider has no such field, ever');
+    }
+
+    /** A caller who brought their own tools must not be silently forced onto one of them. */
+    public function testToPayloadWithCallerToolsForcesNothingEither(): void
+    {
+        $provider = $this->makeProvider();
+
+        $payload = $provider->toPayload(new InternalRequest(
+            messages: [InternalMessage::user('Look it up')],
+            tools: [new ToolDefinition('lookup', 'Looks something up', ['type' => 'object'], fn () => null)],
+        ));
+
+        $this->assertArrayHasKey('tools', $payload);
+        $this->assertArrayNotHasKey('tool_choice', $payload);
     }
 
     // ── toPayload: multimodal ──────────────────────────────────────────────
