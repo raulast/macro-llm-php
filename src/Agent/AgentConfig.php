@@ -7,6 +7,7 @@ namespace MacroLLM\Agent;
 use Closure;
 use MacroLLM\Agent\Memory\NullMemory;
 use MacroLLM\Contract\ConversationMemoryInterface;
+use MacroLLM\Message\ResponseFormat;
 use MacroLLM\Tool\ToolDefinition;
 
 final class AgentConfig
@@ -23,6 +24,8 @@ final class AgentConfig
      *        meaningful event in the tool-call loop (LlmResponse, ToolCall, ToolResult,
      *        FinalResponse). Exceptions thrown by the callback propagate to the caller.
      *        Pass null (default) to disable — zero overhead on the hot path.
+     * @param ResponseFormat|null $responseFormat Structured output the agent must produce. A format set on the
+     *        request passed to `run()` wins over this one, because it is the more specific of the two.
      */
     public function __construct(
         public readonly ?string $provider = null,
@@ -33,5 +36,6 @@ final class AgentConfig
         public readonly int $maxIterations = 10,
         public readonly ConversationMemoryInterface $memory = new NullMemory(),
         public readonly ?Closure $onStep = null,
+        public readonly ?ResponseFormat $responseFormat = null,
     ) {}
 }

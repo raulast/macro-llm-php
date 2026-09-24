@@ -159,6 +159,10 @@ final class Agent
             tools: $tools,
             configOverride: $input->configOverride,
             stream: false,
+            // The request's own format wins over the agent's: it is the more specific of the two, and it is what
+            // the caller passed for THIS call. Without this line the format was dropped here, so structured
+            // output was unreachable from an agent even on a provider that supports it.
+            responseFormat: $input->responseFormat ?? $this->config->responseFormat,
         );
     }
 

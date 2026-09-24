@@ -136,6 +136,10 @@ final class MacroLLM
             tools: $request->tools,
             configOverride: $request->configOverride,
             stream: true,
+            // Carried, not dropped: this method rebuilds the request, and a rebuild that silently loses the
+            // response format makes structured output unreachable from the streaming path even where the
+            // provider supports it.
+            responseFormat: $request->responseFormat,
         );
 
         $payload = $providerInstance->toPayload($streamRequest);
@@ -146,6 +150,9 @@ final class MacroLLM
             $mergedConfig->timeout(),
             $mergedConfig->retries(),
             $mergedConfig->retryDelayMs(),
+            // The same `@internal` seam `chat()` passes. Its absence was why this path had no offline test at
+            // all: without it every attempt is a real network call, so nothing could stub a stream.
+            $this->httpHandlerFactory !== null ? ($this->httpHandlerFactory)() : null,
         ))->stream($providerInstance->endpointPath(), $payload));
 
         $chunks = [];

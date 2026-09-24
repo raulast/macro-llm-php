@@ -9,10 +9,12 @@ use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Response;
 use MacroLLM\Config\Config;
 use MacroLLM\Config\ProviderConfig;
+use MacroLLM\Agent\AgentConfig;
 use MacroLLM\Exception\ProviderRequestException;
 use MacroLLM\MacroLLM;
 use MacroLLM\Message\InternalMessage;
 use MacroLLM\Message\InternalRequest;
+use MacroLLM\Message\ResponseFormat;
 use MacroLLM\Provider\AnthropicProvider;
 use MacroLLM\Provider\OpenAIProvider;
 use MacroLLM\Registry\ProviderRegistry;
@@ -61,6 +63,97 @@ final class MacroLLMTest extends TestCase
     private function request(): InternalRequest
     {
         return new InternalRequest(messages: [InternalMessage::user('hi')]);
+    }
+
+    /**
+     * Records what an attempt put on the wire, from inside the handler, draining without seeking.
+     *
+     * @param  list<string>  $bodies
+     * @return callable(\Psr\Http\Message\RequestInterface): Response
+     */
+    private function captureThenRespond(array &$bodies, int $status, string $body): callable
+    {
+        return function ($request) use (&$bodies, $status, $body): Response {
+            $stream = $request->getBody();
+            $captured = '';
+
+            while (! $stream->eof()) {
+                $chunk = $stream->read(8192);
+                if ($chunk === '') {
+                    break;
+                }
+                $captured .= $chunk;
+            }
+
+            $bodies[] = $captured;
+
+            return new Response($status, [], $body);
+        };
+    }
+
+    private function openAiTextResponse(string $content = '{}'): string
+    {
+        return json_encode([
+            'id' => 'chatcmpl-1',
+            'object' => 'chat.completion',
+            'model' => 'gpt-4o',
+            'choices' => [[
+                'index' => 0,
+                'message' => ['role' => 'assistant', 'content' => $content],
+                'finish_reason' => 'stop',
+            ]],
+        ], JSON_THROW_ON_ERROR);
+    }
+
+    // ── responseFormat plumbing ────────────────────────────────────────────
+
+    public function test_stream_carries_the_response_format_to_the_provider(): void
+    {
+        $bodies = [];
+        $llm = $this->makeLLM([
+            $this->captureThenRespond($bodies, 200, "data: {\"candidates\":[]}\n\ndata: [DONE]\n\n"),
+        ]);
+
+        iterator_to_array($llm->stream(new InternalRequest(
+            messages: [InternalMessage::user('Give me JSON')],
+            responseFormat: ResponseFormat::jsonSchema('answer', ['type' => 'object']),
+        )));
+
+        $this->assertStringContainsString('response_format', $bodies[0]);
+        $this->assertStringContainsString('json_schema', $bodies[0]);
+        $this->assertStringContainsString('"answer"', $bodies[0]);
+    }
+
+    public function test_agent_config_carries_the_response_format_into_the_request(): void
+    {
+        $bodies = [];
+        $llm = $this->makeLLM([$this->captureThenRespond($bodies, 200, $this->openAiTextResponse())]);
+
+        $llm->agent(new AgentConfig(
+            provider: 'openai',
+            responseFormat: ResponseFormat::jsonSchema('answer', ['type' => 'object']),
+        ))->run('hi');
+
+        $this->assertStringContainsString('response_format', $bodies[0]);
+        $this->assertStringContainsString('"answer"', $bodies[0]);
+    }
+
+    /** A format on the request wins over the agent config: it is the more specific of the two. */
+    public function test_the_requests_own_format_wins_over_the_agent_config(): void
+    {
+        $bodies = [];
+        $llm = $this->makeLLM([$this->captureThenRespond($bodies, 200, $this->openAiTextResponse())]);
+
+        $llm->agent(new AgentConfig(
+            provider: 'openai',
+            responseFormat: ResponseFormat::jsonSchema('from-config', ['type' => 'object']),
+        ))->run(new InternalRequest(
+            messages: [InternalMessage::user('hi')],
+            responseFormat: ResponseFormat::jsonSchema('from-request', ['type' => 'object']),
+        ));
+
+        $this->assertStringContainsString('"from-request"', $bodies[0]);
+        $this->assertStringNotContainsString('"from-config"', $bodies[0]);
     }
 
     public function testFailedChatAttributesTheFailureToTheResolvedProvider(): void
