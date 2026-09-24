@@ -11,8 +11,15 @@ use MacroLLM\Http\HttpClient;
 
 abstract class AbstractProvider implements ProviderInterface
 {
+    use ProviderHttpClientTrait;
+
     public function __construct(
         protected readonly ProviderConfig $config,
+        // Test seam: a factory returning a FRESH Guzzle handler stack per request, because a
+        // MockHandler queue is stateful and every request needs its own stack. `@internal` — never
+        // set by production code. Trailing and optional, so `new $class($config)` in
+        // ProviderFactory::make() keeps working unchanged.
+        protected readonly ?\Closure $httpHandlerFactory = null,
     ) {}
 
     public function baseUrl(): string
@@ -57,7 +64,7 @@ abstract class AbstractProvider implements ProviderInterface
     protected function fetchRawModels(string $endpointPath): array
     {
         try {
-            return (new HttpClient($this->baseUrl(), $this->headers(), 10))->get($endpointPath);
+            return $this->httpClient(10)->get($endpointPath);
         } catch (\Throwable) {
             return [];
         }

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace MacroLLM\Provider;
 
-use GuzzleHttp\Client;
 use MacroLLM\Config\ProviderConfig;
 use MacroLLM\Contract\AudioProviderInterface;
 use MacroLLM\Contract\ProviderInterface;
@@ -28,12 +27,16 @@ use MacroLLM\Message\Usage;
  */
 final class ElevenLabsProvider implements ProviderInterface, AudioProviderInterface
 {
+    use ProviderHttpClientTrait;
+
     // Rachel — default free-tier voice
     private const DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
     private const DEFAULT_MODEL    = 'eleven_multilingual_v2';
 
     public function __construct(
         private readonly ProviderConfig $config,
+        // Test seam: see ProviderHttpClientTrait. `@internal` — never set by production code.
+        private readonly ?\Closure $httpHandlerFactory = null,
     ) {}
 
     public function name(): string
@@ -77,15 +80,11 @@ final class ElevenLabsProvider implements ProviderInterface, AudioProviderInterf
             'model_id' => $model,
         ];
 
-        $client = new Client([
-            'base_uri' => rtrim($this->baseUrl(), '/') . '/',
-            'timeout'  => $this->config->timeout ?? 60,
-            'headers'  => $this->headers(),
-        ]);
+        // The endpoint answers with audio bytes, not JSON: the unparsed-response path.
+        $audio = $this->httpClient($this->config->timeout ?? 60)
+            ->postRaw("v1/text-to-speech/{$voiceId}", $payload);
 
-        $response = $client->post("v1/text-to-speech/{$voiceId}", ['json' => $payload]);
-
-        return new AudioResponse((string) $response->getBody(), $format);
+        return new AudioResponse($audio, $format);
     }
 
     public function transcribe(TranscriptionRequest $request): TranscriptionResponse

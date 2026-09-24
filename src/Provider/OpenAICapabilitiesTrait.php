@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace MacroLLM\Provider;
 
-use GuzzleHttp\Client;
-use MacroLLM\Contract\AudioProviderInterface;
 use MacroLLM\Contract\EmbeddingProviderInterface;
 use MacroLLM\Contract\ImageProviderInterface;
 use MacroLLM\Message\AudioRequest;
@@ -100,34 +98,27 @@ trait OpenAICapabilitiesTrait
             $payload['instructions'] = $request->instructions;
         }
 
-        $client = new Client([
-            'base_uri' => rtrim($this->baseUrl(), '/') . '/',
-            'timeout'  => $this->config->timeout ?? 120,
-            'headers'  => $this->headers(),
-        ]);
+        // TTS answers with audio bytes rather than JSON, so this uses the unparsed-response path.
+        $audio = $this->httpClient($this->config->timeout ?? 120)
+            ->postRaw('audio/speech', $payload);
 
-        $response = $client->post('audio/speech', ['json' => $payload]);
-        return new AudioResponse((string) $response->getBody(), $format);
+        return new AudioResponse($audio, $format);
     }
 
     public function transcribe(TranscriptionRequest $request): TranscriptionResponse
     {
-        $client = new Client([
-            'base_uri' => rtrim($this->baseUrl(), '/') . '/',
-            'timeout'  => $this->config->timeout ?? 120,
-            'headers'  => array_diff_key($this->headers(), ['Content-Type' => '']),
-        ]);
-
+        // A Closure part, not a bare fopen(): the stream is opened again for every attempt, so a
+        // retried upload carries the whole file instead of an empty part (HC-12).
         $multipart = [
             ['name' => 'model', 'contents' => $request->model ?? 'whisper-1'],
-            ['name' => 'file', 'contents' => fopen($request->filePath, 'r'), 'filename' => basename($request->filePath)],
+            ['name' => 'file', 'contents' => fn () => fopen($request->filePath, 'r'), 'filename' => basename($request->filePath)],
         ];
         if ($request->language !== null) {
             $multipart[] = ['name' => 'language', 'contents' => $request->language];
         }
 
-        $response = $client->post('audio/transcriptions', ['multipart' => $multipart]);
-        $data = json_decode((string) $response->getBody(), true);
+        $data = $this->httpClient($this->config->timeout ?? 120)
+            ->postMultipart('audio/transcriptions', $multipart);
 
         return new TranscriptionResponse($data['text'] ?? '');
     }
