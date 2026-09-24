@@ -57,6 +57,47 @@ final class HttpClientTest extends TestCase
     }
 
     // ---------------------------------------------------------------------------
+    // HC-11 — the transport reports an endpoint, never an invented provider identity
+    // ---------------------------------------------------------------------------
+
+    /**
+     * HttpClient is provider-agnostic: it is handed a base URL, not a provider. Before this
+     * change the base URL was passed as `providerName`, so a failure read
+     * `Provider "http://test.example" returned HTTP 400` — a URL presented as a provider.
+     * The provider identity is attached by the layer that resolved the provider.
+     */
+    public function testTransportFailureReportsTheEndpointAndLeavesTheProviderUnknown(): void
+    {
+        $client = $this->makeClient([new Response(400, [], '{"error":"bad request"}')]);
+
+        try {
+            $client->post('/completions', ['model' => 'test']);
+            $this->fail('Expected a ProviderRequestException.');
+        } catch (ProviderRequestException $e) {
+            $this->assertNull($e->providerName, 'HttpClient must not invent a provider name.');
+            $this->assertSame('http://test.example', $e->endpoint);
+            $this->assertSame(400, $e->statusCode);
+            $this->assertSame('{"error":"bad request"}', $e->responseBody);
+            $this->assertStringContainsString('http://test.example', $e->getMessage());
+        }
+    }
+
+    /** HC-11 — the streaming path carries the same contract as the JSON path. */
+    public function testStreamTransportFailureAlsoReportsTheEndpointOnly(): void
+    {
+        $client = $this->makeClient([new Response(400, [], '{"error":"bad request"}')]);
+
+        try {
+            $client->stream('/completions', ['model' => 'test']);
+            $this->fail('Expected a ProviderRequestException.');
+        } catch (ProviderRequestException $e) {
+            $this->assertNull($e->providerName, 'HttpClient must not invent a provider name.');
+            $this->assertSame('http://test.example', $e->endpoint);
+            $this->assertSame(400, $e->statusCode);
+        }
+    }
+
+    // ---------------------------------------------------------------------------
     // Seam integration: null handler and callable handler
     // ---------------------------------------------------------------------------
 

@@ -11,7 +11,7 @@ base; the eleven concrete classes below extend it.
 |---|---|---|---|
 | `MacroLLMException` | `MacroLLM\Exception` | — | Abstract base |
 | `UnregisteredProviderException` | `MacroLLM\Exception` | `string $providerName` | Macro called for unknown provider |
-| `ProviderRequestException` | `MacroLLM\Exception` | `string $provider, int $status, string $body` | HTTP 4xx/5xx from provider API |
+| `ProviderRequestException` | `MacroLLM\Exception` | `?string $provider, int $status, string $body, ?string $endpoint = null` | HTTP 4xx/5xx from provider API |
 | `MissingApiKeyException` | `MacroLLM\Exception` | `string $provider` | API key missing before request |
 | `StreamInterruptedException` | `MacroLLM\Exception` | `array $chunks` | SSE stream dropped before finish |
 | `ToolNotFoundException` | `MacroLLM\Exception` | `string $toolName` | `ToolRegistry::get()` asked for a name never registered |
@@ -30,8 +30,10 @@ Two exceptions carry recoverable state beyond the standard message and code:
 |---|---|---|
 | `MaxToolIterationsException` | `$e->iterations` | How many iterations ran |
 | `MaxToolIterationsException` | `$e->lastResponse` | Last `InternalResponse` before the exception |
-| `ProviderRequestException` | `$e->statusCode` | HTTP status returned by the provider |
-| `ProviderRequestException` | `$e->providerBody` | Raw error body from the provider |
+| `ProviderRequestException` | `$e->statusCode` | HTTP status returned by the endpoint |
+| `ProviderRequestException` | `$e->responseBody` | Raw error body from the endpoint |
+| `ProviderRequestException` | `$e->providerName` | Provider resolved for the request, or `null` when the transport raised the failure before attribution (HC-11) |
+| `ProviderRequestException` | `$e->endpoint` | Base URL the request was sent to |
 
 `MaxToolIterationsException::$lastResponse` is the escape hatch for partial work: read
 `$e->lastResponse->content` instead of discarding the turn.

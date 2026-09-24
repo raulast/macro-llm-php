@@ -50,7 +50,8 @@ final class HttpClient
                 $response = $this->client->post(ltrim($path, '/'), ['json' => $payload]);
                 return json_decode((string) $response->getBody(), true) ?? [];
             } catch (BadResponseException $e) {
-                throw new ProviderRequestException(
+                // The transport knows the endpoint it called, never the provider behind it (HC-11).
+                throw ProviderRequestException::forEndpoint(
                     $this->baseUrl,
                     $e->getResponse()->getStatusCode(),
                     (string) $e->getResponse()->getBody(),
@@ -86,7 +87,8 @@ final class HttpClient
                 ]);
                 return (string) $response->getBody();
             } catch (BadResponseException $e) {
-                throw new ProviderRequestException(
+                // Same contract as the JSON path: endpoint, not an invented provider name (HC-11).
+                throw ProviderRequestException::forEndpoint(
                     $this->baseUrl,
                     $e->getResponse()->getStatusCode(),
                     (string) $e->getResponse()->getBody(),

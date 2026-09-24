@@ -94,14 +94,14 @@ final class MacroLLM
 
         $payload = $providerInstance->toPayload($request);
 
-        $data = (new HttpClient(
+        $data = $this->send($providerName, fn (): array => (new HttpClient(
             $providerInstance->baseUrl(),
             $providerInstance->headers(),
             $mergedConfig->timeout(),
             $mergedConfig->retries(),
             $mergedConfig->retryDelayMs(),
             $this->httpHandlerFactory !== null ? ($this->httpHandlerFactory)() : null,
-        ))->post($providerInstance->endpointPath(), $payload);
+        ))->post($providerInstance->endpointPath(), $payload));
 
         return $providerInstance->toResponse($data);
     }
@@ -140,13 +140,13 @@ final class MacroLLM
 
         $payload = $providerInstance->toPayload($streamRequest);
 
-        $body = (new HttpClient(
+        $body = $this->send($providerName, fn (): string => (new HttpClient(
             $providerInstance->baseUrl(),
             $providerInstance->headers(),
             $mergedConfig->timeout(),
             $mergedConfig->retries(),
             $mergedConfig->retryDelayMs(),
-        ))->stream($providerInstance->endpointPath(), $payload);
+        ))->stream($providerInstance->endpointPath(), $payload));
 
         $chunks = [];
         $index = 0;
@@ -364,6 +364,27 @@ final class MacroLLM
         \Illuminate\Http\Client\PendingRequest::macro($providerName, function (InternalRequest $request) use ($providerName, $macroLLM): InternalResponse {
             return $macroLLM->chat($request, $providerName);
         });
+    }
+
+    /**
+     * Run one HTTP attempt for an already-resolved provider and attribute any transport failure to it.
+     *
+     * `HttpClient` is provider-agnostic: it is handed a base URL and never learns which provider it is
+     * serving, so it cannot name the provider that failed (HC-11). This is the layer that resolved the
+     * provider, so this is the layer that attaches the identity — which is what a caller needs to report
+     * the failure accurately, and what a failover policy needs in order to decide what to try next.
+     *
+     * @template T
+     * @param callable(): T $attempt
+     * @return T
+     */
+    private function send(string $providerName, callable $attempt): mixed
+    {
+        try {
+            return $attempt();
+        } catch (ProviderRequestException $e) {
+            throw $e->forProvider($providerName);
+        }
     }
 
     /**
