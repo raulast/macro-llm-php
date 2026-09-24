@@ -10,6 +10,8 @@ use MacroLLM\MacroLLM;
 use MacroLLM\Message\InternalMessage;
 use MacroLLM\Message\InternalRequest;
 use MacroLLM\Message\InternalResponse;
+use MacroLLM\Exception\SchemaValidationException;
+use MacroLLM\Schema\SchemaValidator;
 use MacroLLM\Tool\ToolDefinition;
 use MacroLLM\Tool\ToolResult;
 
@@ -97,9 +99,23 @@ final class Agent
                     );
                 } else {
                     $definition = $toolMap[$toolCall->name];
+
                     try {
+                        // The schema a tool declares is enforced BEFORE its callable runs. A schema the package
+                        // accepts and never checks is worse than no schema at all: it looks like a contract while
+                        // enforcing nothing, and a model can then hand a tool arguments the tool never asked for.
+                        (new SchemaValidator())->validate($toolCall->arguments, $definition->parameters);
+
                         $result = ($definition->callable)($toolCall->arguments);
                         $toolResult = ToolResult::ok($toolCall->id, $toolCall->name, $result);
+                    } catch (SchemaValidationException $e) {
+                        // Not a crash: the loop exists so the model can correct itself, and the message carries the
+                        // failing path for exactly that reason.
+                        $toolResult = ToolResult::error(
+                            $toolCall->id,
+                            $toolCall->name,
+                            'Invalid arguments: ' . $e->getMessage(),
+                        );
                     } catch (\Throwable $e) {
                         $toolResult = ToolResult::error($toolCall->id, $toolCall->name, $e->getMessage());
                     }

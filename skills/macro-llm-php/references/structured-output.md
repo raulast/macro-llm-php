@@ -127,6 +127,11 @@ Three things worth knowing:
 - **An empty array satisfies both `array` and `object`**, because `json_decode(..., true)` cannot tell an empty
   JSON array from an empty JSON object. Any other rule would reject legitimate empty objects.
 
+**Tool arguments are validated for you.** When an `Agent` runs a tool call, its arguments are checked against the
+JSON Schema the tool declared — the third argument to `ToolDefinition` — **before** the callable is invoked. A call
+that breaks the schema becomes a tool error result instead of an execution, carrying the failing path so the model
+can correct itself on the next turn. The loop keeps running; the tool simply does not fire.
+
 ## What each provider family emits
 
 | Family | Emission | Schema handling |

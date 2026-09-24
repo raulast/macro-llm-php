@@ -19,6 +19,7 @@ use MacroLLM\Registry\SkillRegistry;
 use MacroLLM\Registry\ToolRegistry;
 use MacroLLM\Tests\TestCase;
 use MacroLLM\Tool\ToolDefinition;
+use MacroLLM\Tool\ToolStatus;
 
 final class AgentTest extends TestCase
 {
@@ -103,6 +104,113 @@ final class AgentTest extends TestCase
     }
 
     // ── Tests ─────────────────────────────────────────────────────────────
+
+    // ── Tool arguments are validated against the schema the tool declared ───
+
+    /**
+     * The loophole this closes: `ToolDefinition` takes a JSON Schema for its parameters, and nothing ever checked
+     * that a model's tool call honoured it. The callable simply ran with whatever the model produced.
+     */
+    public function test_a_tool_call_that_breaks_the_declared_schema_is_not_executed(): void
+    {
+        $executed = false;
+        $results = [];
+
+        $llm = $this->makeLLM([
+            $this->toolCallGuzzleResponse('get_weather', ['location' => 42]),
+            $this->textGuzzleResponse('I need a place name.'),
+        ]);
+
+        $response = $llm->agent(new AgentConfig(
+            provider: 'openai',
+            tools: [$this->weatherTool($executed)],
+            onStep: function (AgentStep $step) use (&$results): void {
+                if ($step->type === AgentStepType::ToolResult && $step->toolResult !== null) {
+                    $results[] = $step->toolResult;
+                }
+            },
+        ))->run('What is the weather?');
+
+        $this->assertFalse($executed, 'the callable must not run on arguments that break the declared schema');
+        $this->assertCount(1, $results);
+        $this->assertSame(ToolStatus::Error, $results[0]->status);
+        $this->assertStringContainsString(
+            '$.location',
+            (string) $results[0]->content,
+            'the model must be told WHERE the argument was wrong, because the loop exists for it to self-correct',
+        );
+        $this->assertSame('I need a place name.', $response->content);
+    }
+
+    public function test_a_tool_call_missing_a_required_property_is_not_executed(): void
+    {
+        $executed = false;
+        $results = [];
+
+        $llm = $this->makeLLM([
+            $this->toolCallGuzzleResponse('get_weather', []),
+            $this->textGuzzleResponse('Which place?'),
+        ]);
+
+        $llm->agent(new AgentConfig(
+            provider: 'openai',
+            tools: [$this->weatherTool($executed)],
+            onStep: function (AgentStep $step) use (&$results): void {
+                if ($step->type === AgentStepType::ToolResult && $step->toolResult !== null) {
+                    $results[] = $step->toolResult;
+                }
+            },
+        ))->run('What is the weather?');
+
+        $this->assertFalse($executed);
+        $this->assertSame(ToolStatus::Error, $results[0]->status);
+        $this->assertStringContainsString('location', (string) $results[0]->content);
+    }
+
+    /** The control: validation must not block a tool call that DOES match its schema. */
+    public function test_a_tool_call_that_matches_the_schema_still_runs(): void
+    {
+        $executed = false;
+        $results = [];
+
+        $llm = $this->makeLLM([
+            $this->toolCallGuzzleResponse('get_weather', ['location' => 'Rosario']),
+            $this->textGuzzleResponse('It is sunny.'),
+        ]);
+
+        $llm->agent(new AgentConfig(
+            provider: 'openai',
+            tools: [$this->weatherTool($executed)],
+            onStep: function (AgentStep $step) use (&$results): void {
+                if ($step->type === AgentStepType::ToolResult && $step->toolResult !== null) {
+                    $results[] = $step->toolResult;
+                }
+            },
+        ))->run('What is the weather in Rosario?');
+
+        $this->assertTrue($executed);
+        $this->assertSame(ToolStatus::Ok, $results[0]->status);
+        $this->assertSame('sunny', $results[0]->content);
+    }
+
+    /** A tool that declares a schema for the weather lookup above. */
+    private function weatherTool(bool &$executed): ToolDefinition
+    {
+        return new ToolDefinition(
+            'get_weather',
+            'Gets the weather for a place',
+            [
+                'type' => 'object',
+                'properties' => ['location' => ['type' => 'string']],
+                'required' => ['location'],
+            ],
+            function () use (&$executed): string {
+                $executed = true;
+
+                return 'sunny';
+            },
+        );
+    }
 
     public function test_run_returns_final_content_without_tools(): void
     {
