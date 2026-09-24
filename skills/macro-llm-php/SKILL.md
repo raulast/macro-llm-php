@@ -64,6 +64,8 @@ other container: bind the client in your container and inject it — no Laravel 
 | `SchemaNormalizer` | `MacroLLM\Schema\SchemaNormalizer` | Rewrites a JSON Schema for a provider dialect, or refuses it by name |
 | `SchemaValidator` | `MacroLLM\Schema\SchemaValidator` | Checks a decoded value against a JSON Schema and reports the failing path |
 | `FailoverPolicy` | `MacroLLM\Provider\FailoverPolicy` | Classifies which provider failures justify trying another provider |
+| `FakeGateway` | `MacroLLM\Testing\FakeGateway` | Test double: a whole provider answered from a queue, with no network |
+| `OpenAiCompatibleWireTemplate` | `MacroLLM\Testing\OpenAiCompatibleWireTemplate` | The wire shape the ten OpenAI-compatible providers share, used by the fake |
 
 ## When to use which reference
 
@@ -77,6 +79,7 @@ other container: bind the client in your container and inject it — no Laravel 
 | `recipes-advanced.md` | Advanced patterns: multi-agent orchestration, MCP client/server wiring, structured output, embeddings, vision, memory. |
 | `exceptions.md` | The exception hierarchy and which failure path to catch for HTTP, provider, configuration, and tool errors. |
 | `structured-output.md` | JSON Schema normalization: which keywords each provider dialect accepts, and why an unsupported one is refused instead of dropped. |
+| `testing.md` | Faking a provider so your own tests need no network: `FakeGateway`, what gets recorded, and what is deliberately not faked. |
 | `invariants.md` | Non-negotiable package behavior and contracts you must not break when extending or debugging. |
 
 ## Inline recipes
