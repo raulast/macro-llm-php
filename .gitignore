@@ -11,3 +11,9 @@ openspec
 .pi
 # Local ODD task tracking (same local-only decision as openspec/ and .pi)
 odd
+
+# Rule: anything that is NOT the package's own source and is either sensitive or
+# re-derivable goes here — external tooling state, machine-local indexes and caches,
+# editor/OS noise. It can always be regenerated, so ignoring it never loses work.
+.codegraph
+.DS_Store
