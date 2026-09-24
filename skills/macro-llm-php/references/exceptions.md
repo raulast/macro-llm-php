@@ -7,7 +7,7 @@ Every exception the package throws, where it lives, how it is constructed, and w
 All package exceptions live in the `MacroLLM\Exception` namespace. `MacroLLMException` is the abstract
 base; the thirteen concrete classes below extend it.
 
-| Exception | Namespace | Constructor args | When thrown |
+| Exception | Namespace | Constructor args (descriptive shorthand) | When thrown |
 |---|---|---|---|
 | `MacroLLMException` | `MacroLLM\Exception` | — | Abstract base |
 | `UnregisteredProviderException` | `MacroLLM\Exception` | `string $providerName` | Macro called for unknown provider |
@@ -36,7 +36,7 @@ Two exceptions carry recoverable state beyond the standard message and code:
 | `ProviderRequestException` | `$e->responseBody` | Raw error body from the endpoint |
 | `ProviderRequestException` | `$e->providerName` | Provider resolved for the request, or `null` when the transport raised the failure before attribution (HC-11) |
 | `ProviderRequestException` | `$e->endpoint` | Base URL the request was sent to |
-| `SchemaException` | `$e->reason` | `unsupported_keyword`, `recursive_reference`, `unresolvable_reference` or `root_not_object` |
+| `SchemaException` | `$e->reason` | `unsupported_keyword`, `recursive_reference`, `unresolvable_reference`, `root_not_object` or `conflicting_reference_sibling` |
 | `SchemaException` | `$e->path` | Where the schema failed, e.g. `$.properties.address.additionalProperties` |
 | `SchemaException` | `$e->keyword` / `$e->reference` / `$e->declaredType` | The offending keyword, `$ref`, or declared root type — whichever caused it |
 | `StructuredOutputUnsupportedException` | `$e->providerName` / `$e->reason` | Which provider refused, and why (`conflicts_with_tools`, …) |

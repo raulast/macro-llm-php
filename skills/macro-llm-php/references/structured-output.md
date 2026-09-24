@@ -82,9 +82,9 @@ $normalizer = new SchemaNormalizer();
 try {
     $schema = $normalizer->normalize($mySchema, SchemaDialect::Gemini);
 } catch (SchemaException $e) {
-    // $e->reason     — 'unsupported_keyword' | 'recursive_reference'
-    //                | 'unresolvable_reference' | 'root_not_object'
-    // $e->dialect    — 'openai' | 'gemini'
+    // $e->reason     — 'unsupported_keyword' | 'recursive_reference' | 'unresolvable_reference'
+    //                | 'root_not_object' | 'conflicting_reference_sibling'
+    // $e->dialect    — 'openai' | 'gemini' | 'cohere'
     // $e->path       — where it failed, e.g. '$.properties.address.additionalProperties'
     // $e->keyword    — the offending keyword, when a keyword is the cause
     // $e->reference  — the offending `$ref`, when a reference is the cause
@@ -131,8 +131,9 @@ Emission works for **all four families**: OpenAI-compatible, Gemini, Cohere and 
 pinning it. Nothing about structured output is partial in this version.
 
 **One combination is refused outright:** Cohere's reference documents `response_format` as unsupported alongside
-`documents` or `tools`, and the package raises `StructuredOutputUnsupportedException` rather than sending a
-request whose constraint would be dropped. Same exception type, same reason, for every provider that has no way
+`documents` or `tools`. This provider's chat payload carries no `documents` field at all, so `tools` is the one it
+can enforce — and it does, raising `StructuredOutputUnsupportedException` rather than sending a request whose
+constraint would be dropped. Same exception type, same reason, for every provider that has no way
 to honour a format at all — it is deliberately distinct from `SchemaException`, which means the schema itself is
 wrong for the target.
 

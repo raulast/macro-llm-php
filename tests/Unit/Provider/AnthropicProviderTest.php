@@ -341,7 +341,7 @@ class AnthropicProviderTest extends TestCase
         $this->assertSame('user', $payload['messages'][0]['role']);
     }
 
-    // ── toPayload: silently ignores ResponseFormat ──────────────────────────
+    // ── toPayload: this provider has no response_format field, ever ────────
 
     /**
      * Replaces `testToPayloadIgnoresResponseFormat`, which asserted the absence of a key this provider never

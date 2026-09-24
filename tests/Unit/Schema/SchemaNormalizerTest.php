@@ -354,6 +354,35 @@ final class SchemaNormalizerTest extends TestCase
         );
     }
 
+    /**
+     * An explicit `additionalProperties: true` is the caller's statement. Flipping it to `false` would replace
+     * their meaning in silence — the same reason a schema-valued form is preserved — and it was inconsistent that
+     * one non-`false` form survived while the other was overwritten. The consequence is now documented instead of
+     * papered over: strict mode needs closed objects, so a schema that opens them will be refused by the provider,
+     * and that is the caller's call to make.
+     */
+    public function testStrictModeCompletionDoesNotFlipAnExplicitTrueAdditionalProperties(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'properties' => ['a' => ['type' => 'string']],
+            'additionalProperties' => true,
+        ];
+
+        $completed = (new SchemaNormalizer())->completeForStrictMode($schema);
+
+        $this->assertTrue($completed['additionalProperties']);
+    }
+
+    /** No `required` is invented when there is nothing to require, including an explicitly empty property list. */
+    public function testStrictModeCompletionDoesNotInventRequiredForAnEmptyPropertyList(): void
+    {
+        $completed = (new SchemaNormalizer())->completeForStrictMode(['type' => 'object', 'properties' => []]);
+
+        $this->assertArrayNotHasKey('required', $completed);
+        $this->assertFalse($completed['additionalProperties']);
+    }
+
     public function testNormalizationAndStrictCompletionCompose(): void
     {
         $normalizer = new SchemaNormalizer();

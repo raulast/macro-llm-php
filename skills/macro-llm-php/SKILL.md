@@ -60,7 +60,7 @@ other container: bind the client in your container and inject it — no Laravel 
 | `ToolDefinition` | `MacroLLM\Tool\ToolDefinition` | Tool contract: name, description, JSON Schema parameters, callable |
 | `ToolRegistry` | `MacroLLM\Registry\ToolRegistry` | Registry returned by `$llm->tools()`; holds the callables tools call into |
 | `StreamChunk` | `MacroLLM\Message\StreamChunk` | One stream delta plus the `finished` flag and terminal `response` |
-| `SchemaDialect` | `MacroLLM\Schema\SchemaDialect` | What a provider accepts: `OpenAi` and `Gemini` |
+| `SchemaDialect` | `MacroLLM\Schema\SchemaDialect` | What a provider accepts: `OpenAi`, `Gemini` and `Cohere` |
 | `SchemaNormalizer` | `MacroLLM\Schema\SchemaNormalizer` | Rewrites a JSON Schema for a provider dialect, or refuses it by name |
 
 ## When to use which reference

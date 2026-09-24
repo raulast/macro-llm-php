@@ -294,8 +294,10 @@ final class SchemaNormalizer
      * declared, and completing `required` is precisely what `strict: true` means. They therefore do not violate
      * the rule against silent degradation, and the operation is named and tested so they are never invisible.
      *
-     * A schema-valued `additionalProperties` is left untouched: it is an explicit choice strict mode cannot
-     * honour, and rewriting it to `false` would replace the caller's meaning.
+     * A caller-supplied `additionalProperties` is left untouched, in either form. It is an explicit choice strict
+     * mode cannot honour, and silently rewriting it would replace the caller's meaning — so a schema that opens its
+     * objects travels as written and the provider refuses the contradiction, which is louder than us papering over
+     * it. `additionalProperties: false` is added only when the keyword is absent.
      *
      * @param  array<string, mixed>  $schema
      * @return array<string, mixed>
@@ -304,21 +306,23 @@ final class SchemaNormalizer
     {
         $properties = $schema['properties'] ?? null;
 
-        if (is_array($properties)) {
-            $declared = $schema['required'] ?? null;
-            $existing = is_array($declared) ? array_values(array_filter($declared, 'is_string')) : [];
+        if (is_array($properties) || $this->declaresObject($schema)) {
+            if (is_array($properties) && $properties !== []) {
+                $declared = $schema['required'] ?? null;
+                $existing = is_array($declared) ? array_values(array_filter($declared, 'is_string')) : [];
 
-            // The caller's order is preserved and only the missing names are appended, rather than replacing
-            // the list outright.
-            $schema['required'] = array_values(array_unique([...$existing, ...array_keys($properties)]));
+                // The caller's order is preserved and only the missing names are appended, rather than replacing
+                // the list outright. An empty property list has nothing to require, so no `required` is invented.
+                $schema['required'] = array_values(array_unique([...$existing, ...array_keys($properties)]));
+            }
 
-            if (!is_array($schema['additionalProperties'] ?? null)) {
+            // `additionalProperties: false` is only ADDED when the keyword is absent. Whatever the caller wrote —
+            // a boolean or a schema — is theirs, and both forms are treated the same way. The consequence is
+            // documented rather than papered over: strict mode needs closed objects, so an explicit `true` will be
+            // refused by the provider, and that is the caller's call to make rather than ours to override.
+            if (!array_key_exists('additionalProperties', $schema)) {
                 $schema['additionalProperties'] = false;
             }
-        } elseif ($this->declaresObject($schema) && !is_array($schema['additionalProperties'] ?? null)) {
-            // An object that declares no properties still has to forbid the ones it never declared. There is
-            // nothing to add to `required`, so none is invented.
-            $schema['additionalProperties'] = false;
         }
 
         foreach ($schema as $keyword => $value) {

@@ -68,8 +68,10 @@ treat each entry as a behavior contract, not a suggestion.
 
 ## Test suite
 
-18. **`composer test` runs the offline unit suite** — 553 tests / 1189 assertions, no API keys,
-    hand-authored Guzzle MockHandler fixtures. `composer test:integration` runs live tests against a
+18. **`composer test` runs the offline unit suite** — no API keys, hand-authored Guzzle MockHandler
+    fixtures. Run it for the current count rather than trusting a number written here: a document that pins a
+    test count drifts by construction, and this one had drifted from 553/1189 to 781/1787 before anyone noticed.
+    `composer test:integration` runs live tests against a
     local Ollama and self-skips when it is unreachable. PHPUnit 11 is in `require-dev`, so consumers on
     PHP 8.1 are unaffected; contributors need PHP 8.2+.
 19. **PHPUnit bootstrap and coverage scope** — `bootstrap=vendor/autoload.php`; the Unit suite excludes
