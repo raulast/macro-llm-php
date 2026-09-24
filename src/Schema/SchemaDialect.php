@@ -32,6 +32,20 @@ namespace MacroLLM\Schema;
  *    older model that only accepts the OpenAPI subset needs its own dialect case; that is recorded as an
  *    open follow-up rather than papered over.
  *
+ *  - **Cohere** — verified against Cohere's structured-outputs guide and its Chat v2 reference: strings, integers,
+ *    floats, booleans, arrays (including lists of lists), nested objects, enum, const, pattern, format,
+ *    `additionalProperties` and `anyOf` are supported, and `$ref`/`$def` are supported too. Composition
+ *    (`allOf`, `oneOf`, `not`), numeric ranges (`minimum`, `maximum`), length ranges (`minItems`, `maxItems`,
+ *    `minLength`, `maxLength`) and `uniqueItems` are explicitly unsupported.
+ *
+ *    Cohere names its definitions **`$def`**, singular — while the JSON Schema convention, and therefore what a
+ *    caller writes, is `$defs`. Rather than rename the keyword, this dialect inlines references, which makes the
+ *    mismatch unreachable. Three constraints from the same reference are recorded but not enforced, because each
+ *    fails loudly at the provider: every object must declare at least one `required` field; `format` accepts only
+ *    `date-time`, `uuid`, `date` and `time`; and `response_format` is unsupported in combination with `documents`
+ *    or `tools` — that last one IS enforced, by `CohereProvider`, because it would otherwise be ignored rather
+ *    than rejected.
+ *
  *  - **Why `$ref` is not in the kept list.** Gemini accepts `$ref`, but the normalizer inlines references
  *    for it: the provider "unrolls cyclic references to a limited degree, and only within non-required
  *    properties". Inlining removes that trap entirely for non-recursive schemas, and refuses recursion by
@@ -45,6 +59,7 @@ enum SchemaDialect: string
 {
     case OpenAi = 'openai';
     case Gemini = 'gemini';
+    case Cohere = 'cohere';
 
     /**
      * Keywords this dialect accepts and that the normalizer therefore **keeps** in the emitted schema.
@@ -83,6 +98,12 @@ enum SchemaDialect: string
                 'properties', 'additionalProperties', 'required',
                 'propertyOrdering',
             ],
+            self::Cohere => [
+                // Verified against Cohere's structured-outputs guide and Chat v2 reference.
+                'type', 'properties', 'required', 'items',
+                'enum', 'const', 'pattern', 'format',
+                'additionalProperties', 'anyOf',
+            ],
         };
     }
 
@@ -113,7 +134,7 @@ enum SchemaDialect: string
      */
     public function inlinesReferences(): bool
     {
-        return $this === self::Gemini;
+        return $this === self::Gemini || $this === self::Cohere;
     }
 
     /**

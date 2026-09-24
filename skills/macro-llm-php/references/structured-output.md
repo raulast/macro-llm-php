@@ -90,8 +90,8 @@ resolved; external and remote references are refused, not fetched.
 | --- | --- | --- |
 | OpenAI-compatible (10 providers) | `response_format.json_schema` with `name`, `schema`, `strict` | normalized for `SchemaDialect::OpenAi`; when `strict: true`, completed for strict mode |
 | Gemini | `generationConfig.responseMimeType` + `responseJsonSchema` | normalized for `SchemaDialect::Gemini` |
+| Cohere | `response_format.json_schema` beside `type: json_object` | normalized for `SchemaDialect::Cohere` |
 | Anthropic | **refused by name** — see below | — |
-| Cohere | **refused by name** — see below | — |
 
 `ResponseFormat::json()` (the schema-less JSON mode) emits the family's JSON mode without a schema, on both
 families above.
@@ -108,12 +108,18 @@ you need your schema to travel byte-identical, pass `strict: false`.
 
 ## Status: partial, and stated as such
 
-Emission works for **OpenAI-compatible and Gemini**. Two things are still missing and this section is what
-changes when they land:
+Emission works for **OpenAI-compatible, Gemini and Cohere**. Two things are still missing and this section is
+what changes when they land:
 
-- **Anthropic and Cohere refuse.** They raise `SchemaException` rather than silently returning prose.
+- **Anthropic refuses**, and raises rather than silently returning prose.
 - **The streaming and agent paths do not carry `responseFormat` yet**, so structured output applies to a direct
   `chat()` call. (`2.4` of the same work.)
+
+**One combination is refused outright:** Cohere's reference documents `response_format` as unsupported alongside
+`documents` or `tools`, and the package raises `StructuredOutputUnsupportedException` rather than sending a
+request whose constraint would be dropped. Same exception type, same reason, for every provider that has no way
+to honour a format at all — it is deliberately distinct from `SchemaException`, which means the schema itself is
+wrong for the target.
 
 You can always normalize by hand, which is also the way to target a dialect before it is wired up:
 

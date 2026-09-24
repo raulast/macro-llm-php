@@ -59,11 +59,19 @@ final class SchemaDialectTest extends TestCase
 
     public function test_both_dialects_drop_the_same_annotation_set(): void
     {
-        $this->assertSame(
-            SchemaDialect::OpenAi->droppedKeywords(),
-            SchemaDialect::Gemini->droppedKeywords(),
-            'the droppable set is annotation-only and provider-independent; a divergence here needs a reason',
-        );
+        $dropped = SchemaDialect::OpenAi->droppedKeywords();
+
+        foreach (SchemaDialect::cases() as $dialect) {
+            $this->assertSame(
+                $dropped,
+                $dialect->droppedKeywords(),
+                sprintf(
+                    'dialect "%s" diverges from the shared droppable set, which is annotation-only and '
+                    . 'provider-independent; a divergence here needs a reason',
+                    $dialect->value,
+                ),
+            );
+        }
     }
 
     /**
@@ -208,6 +216,56 @@ final class SchemaDialectTest extends TestCase
             SchemaDialect::Gemini->droppedKeywords(),
             'const constrains a value; dropping it would silently disable that constraint',
         );
+    }
+
+    // ── Cohere ──────────────────────────────────────────────────────────────
+
+    /**
+     * Verified against Cohere's structured-outputs guide and Chat v2 reference.
+     */
+    public function test_cohere_supports_the_properties_its_guide_lists(): void
+    {
+        $dialect = SchemaDialect::Cohere;
+
+        foreach (
+            ['type', 'properties', 'required', 'items', 'enum', 'const', 'pattern', 'format', 'additionalProperties', 'anyOf']
+            as $keyword
+        ) {
+            $this->assertContains($keyword, $dialect->supportedKeywords(), $keyword);
+        }
+    }
+
+    public function test_cohere_refuses_the_features_its_guide_lists_as_unsupported(): void
+    {
+        $dialect = SchemaDialect::Cohere;
+
+        $unsupported = [
+            // Schema composition
+            'allOf', 'oneOf', 'not',
+            // Numeric and length ranges
+            'maximum', 'minimum', 'minItems', 'maxItems', 'minLength', 'maxLength',
+            // Explicitly "No" for structured outputs in JSON mode
+            'uniqueItems',
+        ];
+
+        foreach ($unsupported as $keyword) {
+            $this->assertNotContains($keyword, $dialect->supportedKeywords(), $keyword);
+        }
+    }
+
+    /**
+     * Cohere names its references `$ref` and its definitions **`$def`** — singular, without the trailing `s` that
+     * `$defs` carries. Inlining sidesteps the mismatch entirely, which is why this dialect inlines rather than
+     * attempting a keyword rename.
+     */
+    public function test_cohere_inlines_references_because_its_definition_keyword_differs(): void
+    {
+        $dialect = SchemaDialect::Cohere;
+
+        $this->assertTrue($dialect->inlinesReferences());
+        $this->assertFalse($dialect->allowsRecursion());
+        $this->assertNotContains('$ref', $dialect->supportedKeywords());
+        $this->assertNotContains('$defs', $dialect->supportedKeywords());
     }
 
     // ── The failure type ────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ namespace MacroLLM\Provider;
 
 use MacroLLM\Contract\EmbeddingProviderInterface;
 use MacroLLM\Contract\RerankingProviderInterface;
+use MacroLLM\Exception\StructuredOutputUnsupportedException;
 use MacroLLM\Message\EmbeddingRequest;
 use MacroLLM\Message\EmbeddingResponse;
 use MacroLLM\Message\RankedDocument;
@@ -15,8 +16,11 @@ use MacroLLM\Message\FinishReason;
 use MacroLLM\Message\InternalMessage;
 use MacroLLM\Message\InternalRequest;
 use MacroLLM\Message\InternalResponse;
+use MacroLLM\Message\ResponseFormat;
 use MacroLLM\Message\StreamChunk;
 use MacroLLM\Message\Usage;
+use MacroLLM\Schema\SchemaDialect;
+use MacroLLM\Schema\SchemaNormalizer;
 use MacroLLM\Tool\ToolCall;
 use MacroLLM\Tool\ToolDefinition;
 
@@ -74,7 +78,46 @@ final class CohereProvider extends AbstractProvider implements
             );
         }
 
+        if ($request->responseFormat !== null) {
+            // The Chat v2 reference documents response_format as unsupported "when used in combinations with the
+            // documents or tools parameters". Only `tools` is reachable from this payload builder, and a refusal
+            // beats a request that either fails unexplained or returns unconstrained output.
+            if (count($request->tools) > 0) {
+                throw StructuredOutputUnsupportedException::conflictsWith(
+                    'cohere',
+                    'tools',
+                    'the Chat v2 reference documents response_format as not supported in combination with the '
+                    . 'documents or tools parameters',
+                );
+            }
+
+            $payload['response_format'] = $this->mapResponseFormat($request->responseFormat);
+        }
+
         return $payload;
+    }
+
+    /**
+     * Cohere's structured-output shape: a `json_object` type with an optional `json_schema` beside it — the field
+     * name is verified, not assumed, and it is `json_schema` rather than the `json_schema`-inside-`json_schema`
+     * nesting other providers use.
+     *
+     * Two constraints from the same reference that this method does not enforce, recorded so they are not
+     * rediscovered as surprises: every object in the schema must declare at least one `required` field, and
+     * `format` accepts only `date-time`, `uuid`, `date` and `time`. Both fail loudly at the provider.
+     *
+     * @return array<string, mixed>
+     */
+    private function mapResponseFormat(ResponseFormat $format): array
+    {
+        $responseFormat = ['type' => 'json_object'];
+
+        if ($format->schema !== null) {
+            $responseFormat['json_schema'] = (new SchemaNormalizer())
+                ->normalize($format->schema, SchemaDialect::Cohere);
+        }
+
+        return $responseFormat;
     }
 
     public function toResponse(array $providerResponse): InternalResponse

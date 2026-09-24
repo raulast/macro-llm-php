@@ -9,9 +9,15 @@ use MacroLLM\Contract\AudioProviderInterface;
 use MacroLLM\Contract\EmbeddingProviderInterface;
 use MacroLLM\Contract\ImageProviderInterface;
 use MacroLLM\Contract\RerankingProviderInterface;
+use MacroLLM\Exception\SchemaException;
+use MacroLLM\Exception\StructuredOutputUnsupportedException;
 use MacroLLM\Message\FinishReason;
+use MacroLLM\Message\InternalMessage;
+use MacroLLM\Message\InternalRequest;
+use MacroLLM\Message\ResponseFormat;
 use MacroLLM\Provider\CohereProvider;
 use MacroLLM\Tests\TestCase;
+use MacroLLM\Tool\ToolDefinition;
 
 /**
  * Tests for CohereProvider — native /v2/chat format (not OpenAI-compatible).
@@ -113,6 +119,89 @@ class CohereProviderTest extends TestCase
     }
 
     // ── Capability interfaces ─────────────────────────────────────────────
+
+    // ── Structured output emission ─────────────────────────────────────────
+
+    public function testToPayloadEmitsJsonSchemaResponseFormat(): void
+    {
+        $provider = $this->makeProvider();
+        $format = ResponseFormat::jsonSchema('book', [
+            'type' => 'object',
+            '$id' => 'https://example.test/book',
+            'properties' => [
+                'title' => ['type' => 'string'],
+                'year' => ['type' => 'integer'],
+            ],
+            'required' => ['title'],
+        ]);
+
+        $payload = $provider->toPayload(new InternalRequest(
+            messages: [InternalMessage::user('Extract the book')],
+            responseFormat: $format,
+        ));
+
+        $this->assertSame('json_object', $payload['response_format']['type']);
+        $this->assertSame('integer', $payload['response_format']['json_schema']['properties']['year']['type']);
+        $this->assertArrayNotHasKey('$id', $payload['response_format']['json_schema']);
+    }
+
+    public function testToPayloadEmitsJsonModeWithoutASchema(): void
+    {
+        $provider = $this->makeProvider();
+
+        $payload = $provider->toPayload(new InternalRequest(
+            messages: [InternalMessage::user('Give me JSON')],
+            responseFormat: ResponseFormat::json(),
+        ));
+
+        $this->assertSame('json_object', $payload['response_format']['type']);
+        $this->assertArrayNotHasKey('json_schema', $payload['response_format']);
+    }
+
+    /**
+     * Cohere's own reference states the limitation outright: the parameter "is not supported when used in
+     * combinations with the documents or tools parameters". Refusing is the only honest option, because sending
+     * it anyway would either fail unexplained or quietly return unconstrained output.
+     */
+    public function testToPayloadRefusesStructuredOutputWhenToolsArePresent(): void
+    {
+        $provider = $this->makeProvider();
+        $request = new InternalRequest(
+            messages: [InternalMessage::user('Extract')],
+            tools: [new ToolDefinition('noop', 'Does nothing', ['type' => 'object'], fn () => null)],
+            responseFormat: ResponseFormat::jsonSchema('book', [
+                'type' => 'object',
+                'properties' => ['title' => ['type' => 'string']],
+                'required' => ['title'],
+            ]),
+        );
+
+        try {
+            $provider->toPayload($request);
+            $this->fail('Expected a StructuredOutputUnsupportedException.');
+        } catch (StructuredOutputUnsupportedException $e) {
+            $this->assertSame('cohere', $e->providerName);
+            $this->assertStringContainsString('tools', $e->getMessage());
+        }
+    }
+
+    public function testToPayloadRefusesAKeywordTheCohereDialectDoesNotSupport(): void
+    {
+        $provider = $this->makeProvider();
+        $request = new InternalRequest(
+            messages: [InternalMessage::user('Extract')],
+            responseFormat: ResponseFormat::jsonSchema('book', [
+                'type' => 'object',
+                'properties' => ['title' => ['type' => 'string', 'minLength' => 3]],
+                'required' => ['title'],
+            ]),
+        );
+
+        $this->expectException(SchemaException::class);
+        $this->expectExceptionMessageMatches('/minLength/');
+
+        $provider->toPayload($request);
+    }
 
     public function testImplementsEmbeddingAndReranking(): void
     {

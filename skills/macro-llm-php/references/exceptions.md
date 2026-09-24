@@ -5,7 +5,7 @@ Every exception the package throws, where it lives, how it is constructed, and w
 ## Exception catalog
 
 All package exceptions live in the `MacroLLM\Exception` namespace. `MacroLLMException` is the abstract
-base; the twelve concrete classes below extend it.
+base; the thirteen concrete classes below extend it.
 
 | Exception | Namespace | Constructor args | When thrown |
 |---|---|---|---|
@@ -13,6 +13,7 @@ base; the twelve concrete classes below extend it.
 | `UnregisteredProviderException` | `MacroLLM\Exception` | `string $providerName` | Macro called for unknown provider |
 | `ProviderRequestException` | `MacroLLM\Exception` | `?string $provider, int $status, string $body, ?string $endpoint = null` | HTTP 4xx/5xx from provider API |
 | `SchemaException` | `MacroLLM\Exception` | static factories, e.g. `unsupportedKeyword()` | A JSON Schema cannot be expressed in the target provider dialect |
+| `StructuredOutputUnsupportedException` | `MacroLLM\Exception` | `conflictsWith()` | The provider cannot honour structured output for this request at all |
 | `MissingApiKeyException` | `MacroLLM\Exception` | `string $provider` | API key missing before request |
 | `StreamInterruptedException` | `MacroLLM\Exception` | `array $chunks` | SSE stream dropped before finish |
 | `ToolNotFoundException` | `MacroLLM\Exception` | `string $toolName` | `ToolRegistry::get()` asked for a name never registered |
@@ -38,6 +39,7 @@ Two exceptions carry recoverable state beyond the standard message and code:
 | `SchemaException` | `$e->reason` | `unsupported_keyword`, `recursive_reference`, `unresolvable_reference` or `root_not_object` |
 | `SchemaException` | `$e->path` | Where the schema failed, e.g. `$.properties.address.additionalProperties` |
 | `SchemaException` | `$e->keyword` / `$e->reference` / `$e->declaredType` | The offending keyword, `$ref`, or declared root type — whichever caused it |
+| `StructuredOutputUnsupportedException` | `$e->providerName` / `$e->reason` | Which provider refused, and why (`conflicts_with_tools`, …) |
 
 `MaxToolIterationsException::$lastResponse` is the escape hatch for partial work: read
 `$e->lastResponse->content` instead of discarding the turn.
