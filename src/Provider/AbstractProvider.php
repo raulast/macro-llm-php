@@ -7,7 +7,6 @@ namespace MacroLLM\Provider;
 use MacroLLM\Config\ProviderConfig;
 use MacroLLM\Contract\ProviderInterface;
 use MacroLLM\Exception\MissingApiKeyException;
-use MacroLLM\Http\HttpClient;
 
 abstract class AbstractProvider implements ProviderInterface
 {

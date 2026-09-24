@@ -6,7 +6,6 @@ namespace MacroLLM\Provider;
 
 use MacroLLM\Config\ProviderConfig;
 use MacroLLM\Contract\EmbeddingProviderInterface;
-use MacroLLM\Http\HttpClient;
 use MacroLLM\Message\EmbeddingRequest;
 use MacroLLM\Message\EmbeddingResponse;
 use MacroLLM\Message\Usage;
@@ -18,8 +17,12 @@ use MacroLLM\Message\Usage;
  */
 final class OllamaEmbeddingProvider implements EmbeddingProviderInterface
 {
+    use ProviderHttpClientTrait;
+
     public function __construct(
         private readonly ProviderConfig $config,
+        // Test seam: see ProviderHttpClientTrait. `@internal` — never set by production code.
+        private readonly ?\Closure $httpHandlerFactory = null,
     ) {}
 
     public function name(): string
@@ -27,15 +30,19 @@ final class OllamaEmbeddingProvider implements EmbeddingProviderInterface
         return 'ollama';
     }
 
+    public function baseUrl(): string
+    {
+        return rtrim($this->config->baseUrl ?? 'http://localhost:11434/v1', '/');
+    }
+
+    public function headers(): array
+    {
+        return ['Content-Type' => 'application/json'];
+    }
+
     public function embed(EmbeddingRequest $request): EmbeddingResponse
     {
-        $baseUrl = rtrim($this->config->baseUrl ?? 'http://localhost:11434/v1', '/');
-
-        $response = (new HttpClient(
-            $baseUrl,
-            ['Content-Type' => 'application/json'],
-            $this->config->timeout ?? 30,
-        ))->post('/embeddings', [
+        $response = $this->httpClient($this->config->timeout ?? 30)->post('/embeddings', [
             'model' => $request->model ?? $this->config->defaultModel,
             'input' => $request->inputs,
         ]);

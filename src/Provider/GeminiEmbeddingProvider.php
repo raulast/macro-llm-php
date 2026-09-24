@@ -7,7 +7,6 @@ namespace MacroLLM\Provider;
 use MacroLLM\Config\ProviderConfig;
 use MacroLLM\Contract\EmbeddingProviderInterface;
 use MacroLLM\Exception\MissingApiKeyException;
-use MacroLLM\Http\HttpClient;
 use MacroLLM\Message\EmbeddingRequest;
 use MacroLLM\Message\EmbeddingResponse;
 use MacroLLM\Message\Usage;
@@ -19,13 +18,32 @@ use MacroLLM\Message\Usage;
  */
 final class GeminiEmbeddingProvider implements EmbeddingProviderInterface
 {
+    use ProviderHttpClientTrait;
+
     public function __construct(
         private readonly ProviderConfig $config,
+        // Test seam: see ProviderHttpClientTrait. `@internal` — never set by production code.
+        private readonly ?\Closure $httpHandlerFactory = null,
     ) {}
 
     public function name(): string
     {
         return 'gemini';
+    }
+
+    public function baseUrl(): string
+    {
+        return rtrim($this->config->baseUrl ?? 'https://generativelanguage.googleapis.com/v1beta', '/');
+    }
+
+    public function headers(): array
+    {
+        $apiKey = $this->config->apiKey;
+        if (!$apiKey) {
+            throw new MissingApiKeyException('gemini');
+        }
+
+        return ['Content-Type' => 'application/json', 'x-goog-api-key' => $apiKey];
     }
 
     public function embed(EmbeddingRequest $request): EmbeddingResponse
@@ -36,7 +54,6 @@ final class GeminiEmbeddingProvider implements EmbeddingProviderInterface
         }
 
         $model = $request->model ?? $this->config->defaultModel;
-        $baseUrl = rtrim($this->config->baseUrl ?? 'https://generativelanguage.googleapis.com/v1beta', '/');
 
         $requests = array_map(
             fn(string $input) => [
@@ -54,11 +71,7 @@ final class GeminiEmbeddingProvider implements EmbeddingProviderInterface
             }
         }
 
-        $response = (new HttpClient(
-            $baseUrl,
-            ['Content-Type' => 'application/json', 'x-goog-api-key' => $apiKey],
-            $this->config->timeout ?? 30,
-        ))->post("/models/{$model}:batchEmbedContents", $payload);
+        $response = $this->httpClient($this->config->timeout ?? 30)->post("/models/{$model}:batchEmbedContents", $payload);
 
         $embeddings = array_map(
             fn(array $e) => $e['values'],

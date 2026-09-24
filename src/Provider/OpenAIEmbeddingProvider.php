@@ -8,20 +8,38 @@ use MacroLLM\Config\ProviderConfig;
 use MacroLLM\Contract\EmbeddingProviderInterface;
 use MacroLLM\Exception\MissingApiKeyException;
 use MacroLLM\Exception\ProviderRequestException;
-use MacroLLM\Http\HttpClient;
 use MacroLLM\Message\EmbeddingRequest;
 use MacroLLM\Message\EmbeddingResponse;
 use MacroLLM\Message\Usage;
 
 final class OpenAIEmbeddingProvider implements EmbeddingProviderInterface
 {
+    use ProviderHttpClientTrait;
+
     public function __construct(
         private readonly ProviderConfig $config,
+        // Test seam: see ProviderHttpClientTrait. `@internal` — never set by production code.
+        private readonly ?\Closure $httpHandlerFactory = null,
     ) {}
 
     public function name(): string
     {
         return 'openai';
+    }
+
+    public function baseUrl(): string
+    {
+        return $this->config->baseUrl ?? 'https://api.openai.com/v1';
+    }
+
+    public function headers(): array
+    {
+        $apiKey = $this->config->apiKey;
+        if (!$apiKey) {
+            throw new MissingApiKeyException('openai');
+        }
+
+        return ['Authorization' => 'Bearer ' . $apiKey, 'Content-Type' => 'application/json'];
     }
 
     public function embed(EmbeddingRequest $request): EmbeddingResponse
@@ -39,11 +57,7 @@ final class OpenAIEmbeddingProvider implements EmbeddingProviderInterface
             $payload['dimensions'] = $request->dimensions;
         }
 
-        $response = (new HttpClient(
-            $this->config->baseUrl ?? 'https://api.openai.com/v1',
-            ['Authorization' => 'Bearer ' . $apiKey, 'Content-Type' => 'application/json'],
-            $this->config->timeout ?? 30,
-        ))->post('/embeddings', $payload);
+        $response = $this->httpClient($this->config->timeout ?? 30)->post('/embeddings', $payload);
 
         $embeddings = array_map(
             fn(array $d) => $d['embedding'],

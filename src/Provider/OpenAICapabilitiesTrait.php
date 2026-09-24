@@ -16,7 +16,6 @@ use MacroLLM\Message\ImageSize;
 use MacroLLM\Message\TranscriptionRequest;
 use MacroLLM\Message\TranscriptionResponse;
 use MacroLLM\Message\Usage;
-use MacroLLM\Http\HttpClient;
 
 /**
  * Shared capability implementations for OpenAI-compatible providers.
@@ -36,11 +35,7 @@ trait OpenAICapabilitiesTrait
             $payload['dimensions'] = $request->dimensions;
         }
 
-        $response = (new HttpClient(
-            $this->baseUrl(),
-            $this->headers(),
-            $this->config->timeout ?? 30,
-        ))->post('/embeddings', $payload);
+        $response = $this->httpClient($this->config->timeout ?? 30)->post('/embeddings', $payload);
 
         $embeddings = array_map(fn(array $d) => $d['embedding'], $response['data'] ?? []);
 
@@ -66,11 +61,7 @@ trait OpenAICapabilitiesTrait
             $payload['quality'] = $request->quality;
         }
 
-        $response = (new HttpClient(
-            $this->baseUrl(),
-            $this->headers(),
-            $this->config->timeout ?? 120,
-        ))->post('/images/generations', $payload);
+        $response = $this->httpClient($this->config->timeout ?? 120)->post('/images/generations', $payload);
 
         return new ImageResponse(array_column($response['data'] ?? [], 'b64_json'));
     }
