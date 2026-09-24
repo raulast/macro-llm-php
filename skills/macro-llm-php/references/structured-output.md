@@ -96,6 +96,37 @@ try {
 The root schema must describe an object. Only local pointers (`#/$defs/...`, `#/definitions/...`) are
 resolved; external and remote references are refused, not fetched.
 
+## Validating a value
+
+`SchemaNormalizer` prepares a schema for a provider. `SchemaValidator` goes the other way: it checks a decoded
+value against a schema you wrote and tells you exactly where it failed.
+
+```php
+use MacroLLM\Exception\SchemaValidationException;
+use MacroLLM\Schema\SchemaValidator;
+
+try {
+    (new SchemaValidator())->validate($decoded, [
+        'type' => 'object',
+        'properties' => ['city' => ['type' => 'string']],
+        'required' => ['city'],
+    ]);
+} catch (SchemaValidationException $e) {
+    // $e->reason  — 'value_mismatch' (the value is wrong) or 'unsupported_keyword' (the schema is)
+    // $e->path    — where, e.g. '$.city'
+    // $e->keyword — which constraint, e.g. 'type'
+}
+```
+
+Three things worth knowing:
+
+- **Keywords are scoped to their type**, exactly as JSON Schema specifies: `minLength` on a non-string is
+  vacuously satisfied rather than an error, and only `type` decides whether a value is the right shape at all.
+- **An unknown keyword is refused**, not ignored, and a `$ref` is refused too — with a message telling you to
+  inline it first. A schema the validator cannot fully check is never reported as satisfied.
+- **An empty array satisfies both `array` and `object`**, because `json_decode(..., true)` cannot tell an empty
+  JSON array from an empty JSON object. Any other rule would reject legitimate empty objects.
+
 ## What each provider family emits
 
 | Family | Emission | Schema handling |

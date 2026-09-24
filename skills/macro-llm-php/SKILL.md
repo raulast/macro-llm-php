@@ -62,6 +62,7 @@ other container: bind the client in your container and inject it — no Laravel 
 | `StreamChunk` | `MacroLLM\Message\StreamChunk` | One stream delta plus the `finished` flag and terminal `response` |
 | `SchemaDialect` | `MacroLLM\Schema\SchemaDialect` | What a provider accepts: `OpenAi`, `Gemini` and `Cohere` |
 | `SchemaNormalizer` | `MacroLLM\Schema\SchemaNormalizer` | Rewrites a JSON Schema for a provider dialect, or refuses it by name |
+| `SchemaValidator` | `MacroLLM\Schema\SchemaValidator` | Checks a decoded value against a JSON Schema and reports the failing path |
 
 ## When to use which reference
 

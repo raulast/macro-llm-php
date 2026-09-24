@@ -5,7 +5,7 @@ Every exception the package throws, where it lives, how it is constructed, and w
 ## Exception catalog
 
 All package exceptions live in the `MacroLLM\Exception` namespace. `MacroLLMException` is the abstract
-base; the thirteen concrete classes below extend it.
+base; the fourteen concrete classes below extend it.
 
 | Exception | Namespace | Constructor args (descriptive shorthand) | When thrown |
 |---|---|---|---|
@@ -14,6 +14,7 @@ base; the thirteen concrete classes below extend it.
 | `ProviderRequestException` | `MacroLLM\Exception` | `?string $provider, int $status, string $body, ?string $endpoint = null` | HTTP 4xx/5xx from provider API |
 | `SchemaException` | `MacroLLM\Exception` | static factories, e.g. `unsupportedKeyword()` | A JSON Schema cannot be expressed in the target provider dialect |
 | `StructuredOutputUnsupportedException` | `MacroLLM\Exception` | `conflictsWith()` | The provider cannot honour structured output for this request at all |
+| `SchemaValidationException` | `MacroLLM\Exception` | static factories, e.g. `valueMismatch()` | A value does not match a schema, or the schema cannot be enforced |
 | `MissingApiKeyException` | `MacroLLM\Exception` | `string $provider` | API key missing before request |
 | `StreamInterruptedException` | `MacroLLM\Exception` | `array $chunks` | SSE stream dropped before finish |
 | `ToolNotFoundException` | `MacroLLM\Exception` | `string $toolName` | `ToolRegistry::get()` asked for a name never registered |
@@ -40,6 +41,8 @@ Two exceptions carry recoverable state beyond the standard message and code:
 | `SchemaException` | `$e->path` | Where the schema failed, e.g. `$.properties.address.additionalProperties` |
 | `SchemaException` | `$e->keyword` / `$e->reference` / `$e->declaredType` | The offending keyword, `$ref`, or declared root type — whichever caused it |
 | `StructuredOutputUnsupportedException` | `$e->providerName` / `$e->reason` | Which provider refused, and why (`conflicts_with_tools`, …) |
+| `SchemaValidationException` | `$e->reason` | `value_mismatch` (the payload is wrong) or `unsupported_keyword` (the schema is) |
+| `SchemaValidationException` | `$e->path` / `$e->keyword` / `$e->expected` / `$e->actual` | Exactly where it failed and what was found |
 
 `MaxToolIterationsException::$lastResponse` is the escape hatch for partial work: read
 `$e->lastResponse->content` instead of discarding the turn.
